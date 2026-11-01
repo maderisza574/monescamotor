@@ -403,54 +403,105 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
   }
 
   // Susun teks ESC/POS
+  const isDraft = Boolean(options.isDraft || transaction.is_draft);
+
   let text = escposFormat.INIT;
   text += escposFormat.ALIGN_CENTER;
   text += escposFormat.BOLD_ON + storeName + '\n' + escposFormat.BOLD_OFF;
   if (formattedTagline) text += formattedTagline + '\n';
   if (formattedAddress) text += formattedAddress + '\n';
   if (phone) text += phone + '\n';
-  text += '--------------------------------\n';
-  text += escposFormat.ALIGN_LEFT;
-  text += `No. Faktur : ${transaction.invoice_number}\n`;
-  text += `Tanggal    : ${new Date(transaction.created_at || Date.now()).toLocaleString('id-ID')}\n`;
-  text += `Kasir      : ${transaction.cashier_name || 'Kasir'}\n`;
-  if (transaction.vehicle_plate) {
-    text += `Plat Motor : ${transaction.vehicle_plate.toUpperCase()}\n`;
-  }
-  if (transaction.vehicle_model) {
-    text += `Tipe Motor : ${transaction.vehicle_model}\n`;
-  }
-  if (transaction.customer_name && transaction.customer_name !== 'Pelanggan Umum') {
-    text += `Pelanggan  : ${transaction.customer_name}\n`;
-  }
-  text += '--------------------------------\n';
 
-  // Rincian Item (Sparepart & Jasa Servis)
-  const items = transaction.items || [];
-  for (const item of items) {
-    const itemName = item.is_service ? `[JASA] ${item.product_name}` : item.product_name;
-    text += itemName + '\n';
-    const detailLeft = `  ${item.quantity} x ${formatNumber(item.unit_price)}`;
-    const detailRight = formatNumber(item.subtotal);
-    text += formatRow58mm(detailLeft, detailRight, 32);
-  }
+  if (isDraft) {
+    text += '================================\n';
+    text += escposFormat.BOLD_ON + '*** TANDA TERIMA SERVIS ***\n' + escposFormat.BOLD_OFF;
+    text += '(MOTOR DITINGGAL / ESTIMASI)\n';
+    text += '================================\n';
+    text += escposFormat.ALIGN_LEFT;
+    text += `No. Draft  : ${transaction.draft_id || transaction.invoice_number}\n`;
+    text += `Waktu Masuk: ${new Date(transaction.created_at || Date.now()).toLocaleString('id-ID')}\n`;
+    text += `Kasir      : ${transaction.cashier_name || 'Kasir'}\n`;
+    if (transaction.vehicle_plate) {
+      text += `Plat Motor : ${transaction.vehicle_plate.toUpperCase()}\n`;
+    }
+    if (transaction.vehicle_model) {
+      text += `Tipe Motor : ${transaction.vehicle_model}\n`;
+    }
+    if (transaction.customer_name && transaction.customer_name !== 'Pelanggan Umum') {
+      text += `Pelanggan  : ${transaction.customer_name}\n`;
+    }
+    text += '--------------------------------\n';
+    text += escposFormat.BOLD_ON + 'Daftar Part & Servis:\n' + escposFormat.BOLD_OFF;
 
-  text += '--------------------------------\n';
-  text += formatRow58mm('Subtotal', formatNumber(transaction.subtotal), 32);
-  if (Number(transaction.discount) > 0) {
-    text += formatRow58mm('Diskon', `-${formatNumber(transaction.discount)}`, 32);
+    const items = transaction.items || [];
+    for (const item of items) {
+      const prefix = item.is_manual ? '[LUAR] ' : (item.is_service ? '[JASA] ' : '');
+      const itemName = `${prefix}${item.product_name}`;
+      text += itemName + '\n';
+      const detailLeft = `  ${item.quantity} x ${formatNumber(item.unit_price)}`;
+      const detailRight = formatNumber(item.subtotal);
+      text += formatRow58mm(detailLeft, detailRight, 32);
+    }
+
+    text += '--------------------------------\n';
+    text += formatRow58mm('Subtotal', formatNumber(transaction.subtotal), 32);
+    if (Number(transaction.discount) > 0) {
+      text += formatRow58mm('Diskon', `-${formatNumber(transaction.discount)}`, 32);
+    }
+    text += escposFormat.BOLD_ON;
+    text += formatRow58mm('ESTIMASI TOTAL', formatNumber(transaction.total_amount), 32);
+    text += escposFormat.BOLD_OFF;
+    text += 'Status: DALAM PENGERJAAN\n';
+    text += '--------------------------------\n';
+    text += escposFormat.ALIGN_CENTER;
+    text += '* Simpan struk ini sebagai bukti\n  pengambilan motor Anda.\n';
+    text += '* Estimasi biaya dapat berubah jika\n  ada tambahan pengerjaan.\n';
+    text += escposFormat.FEED_4;
+  } else {
+    text += '--------------------------------\n';
+    text += escposFormat.ALIGN_LEFT;
+    text += `No. Faktur : ${transaction.invoice_number}\n`;
+    text += `Tanggal    : ${new Date(transaction.created_at || Date.now()).toLocaleString('id-ID')}\n`;
+    text += `Kasir      : ${transaction.cashier_name || 'Kasir'}\n`;
+    if (transaction.vehicle_plate) {
+      text += `Plat Motor : ${transaction.vehicle_plate.toUpperCase()}\n`;
+    }
+    if (transaction.vehicle_model) {
+      text += `Tipe Motor : ${transaction.vehicle_model}\n`;
+    }
+    if (transaction.customer_name && transaction.customer_name !== 'Pelanggan Umum') {
+      text += `Pelanggan  : ${transaction.customer_name}\n`;
+    }
+    text += '--------------------------------\n';
+
+    // Rincian Item (Sparepart & Jasa Servis)
+    const items = transaction.items || [];
+    for (const item of items) {
+      const prefix = item.is_manual ? '[LUAR] ' : (item.is_service ? '[JASA] ' : '');
+      const itemName = `${prefix}${item.product_name}`;
+      text += itemName + '\n';
+      const detailLeft = `  ${item.quantity} x ${formatNumber(item.unit_price)}`;
+      const detailRight = formatNumber(item.subtotal);
+      text += formatRow58mm(detailLeft, detailRight, 32);
+    }
+
+    text += '--------------------------------\n';
+    text += formatRow58mm('Subtotal', formatNumber(transaction.subtotal), 32);
+    if (Number(transaction.discount) > 0) {
+      text += formatRow58mm('Diskon', `-${formatNumber(transaction.discount)}`, 32);
+    }
+    text += escposFormat.BOLD_ON;
+    text += formatRow58mm('TOTAL', formatNumber(transaction.total_amount), 32);
+    text += escposFormat.BOLD_OFF;
+    text += formatRow58mm(`Bayar (${transaction.payment_method})`, formatNumber(transaction.cash_given || transaction.total_amount), 32);
+    if (Number(transaction.change_due) > 0) {
+      text += formatRow58mm('Kembalian', formatNumber(transaction.change_due), 32);
+    }
+    text += '--------------------------------\n';
+    text += escposFormat.ALIGN_CENTER;
+    if (formattedFooter) text += formattedFooter + '\n';
+    text += escposFormat.FEED_4;
   }
-  text += escposFormat.BOLD_ON;
-  text += formatRow58mm('TOTAL', formatNumber(transaction.total_amount), 32);
-  text += escposFormat.BOLD_OFF;
-  text += formatRow58mm(`Bayar (${transaction.payment_method})`, formatNumber(transaction.cash_given || transaction.total_amount), 32);
-  if (Number(transaction.change_due) > 0) {
-    text += formatRow58mm('Kembalian', formatNumber(transaction.change_due), 32);
-  }
-  text += '--------------------------------\n';
-  text += escposFormat.ALIGN_CENTER;
-  if (formattedFooter) text += formattedFooter + '\n';
-  text += escposFormat.FEED_4;
 
   const encoder = new TextEncoder();
   const textBytes = encoder.encode(text);

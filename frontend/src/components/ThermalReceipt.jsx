@@ -31,6 +31,8 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
 
   if (!transaction) return null;
 
+  const isDraft = Boolean(transaction.is_draft);
+
   const handlePrintBluetooth = async (forceSelect = false) => {
     try {
       setPrintingBt(true);
@@ -45,7 +47,8 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
 
       await printViaWebBluetooth(transaction, store, { 
         includeLogo: true, 
-        forceSelect 
+        forceSelect,
+        isDraft
       });
 
       const currentDev = getConnectedBluetoothDevice();
@@ -80,8 +83,9 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
     <div className="modal-overlay">
       <div className="modal-content" style={{ maxWidth: '420px', padding: '1.25rem' }}>
         <div className="modal-header" style={{ marginBottom: '0.85rem' }}>
-          <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <IoPrintOutline color="#38bdf8" /> Struk Pembayaran
+          <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: isDraft ? '#fbbf24' : '#38bdf8' }}>
+            <IoPrintOutline color={isDraft ? '#fbbf24' : '#38bdf8'} />
+            {isDraft ? 'Tanda Terima Motor Ditinggal (Draft)' : 'Struk Pembayaran'}
           </h3>
           <button className="modal-close-btn" onClick={onClose}>
             <IoCloseCircleOutline size={24} />
@@ -173,8 +177,19 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
 
           <div className="receipt-divider"></div>
 
+          {isDraft && (
+            <div style={{ textAlign: 'center', margin: '4px 0 6px 0', borderBottom: '1px dashed #333', paddingBottom: '4px' }}>
+              <div className="receipt-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>
+                *** TANDA TERIMA SERVIS ***
+              </div>
+              <div style={{ fontSize: '9px', color: '#555' }}>
+                (MOTOR DITINGGAL / ESTIMASI BIAYA)
+              </div>
+            </div>
+          )}
+
           <div className="receipt-row">
-            <span>No: {transaction.invoice_number}</span>
+            <span>{isDraft ? 'No. Draft' : 'No'}: {transaction.invoice_number || transaction.draft_id}</span>
           </div>
           <div className="receipt-row">
             <span>Tgl: {new Date(transaction.created_at || Date.now()).toLocaleDateString('id-ID')}</span>
@@ -205,7 +220,7 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
           {items.map((it, idx) => (
             <div key={idx} style={{ marginBottom: '4px' }}>
               <div className="receipt-bold" style={{ fontSize: '11px' }}>
-                {it.is_service ? `[JASA] ${it.product_name}` : it.product_name}
+                {it.is_manual ? `[LUAR] ${it.product_name}` : (it.is_service ? `[JASA] ${it.product_name}` : it.product_name)}
               </div>
               <div className="receipt-row" style={{ fontSize: '11px' }}>
                 <span>  {it.quantity} x {formatNumber(it.unit_price)}</span>
@@ -227,23 +242,36 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
             </div>
           )}
           <div className="receipt-row receipt-bold" style={{ fontSize: '13px', margin: '4px 0' }}>
-            <span>TOTAL</span>
+            <span>{isDraft ? 'ESTIMASI TOTAL' : 'TOTAL'}</span>
             <span>{formatCurrency(transaction.total_amount)}</span>
           </div>
-          <div className="receipt-row">
-            <span>Bayar ({transaction.payment_method})</span>
-            <span>{formatNumber(transaction.cash_given || transaction.total_amount)}</span>
-          </div>
-          {Number(transaction.change_due) > 0 && (
-            <div className="receipt-row">
-              <span>Kembalian</span>
-              <span>{formatNumber(transaction.change_due)}</span>
+
+          {!isDraft ? (
+            <>
+              <div className="receipt-row">
+                <span>Bayar ({transaction.payment_method})</span>
+                <span>{formatNumber(transaction.cash_given || transaction.total_amount)}</span>
+              </div>
+              {Number(transaction.change_due) > 0 && (
+                <div className="receipt-row">
+                  <span>Kembalian</span>
+                  <span>{formatNumber(transaction.change_due)}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="receipt-row" style={{ fontSize: '10px', fontStyle: 'italic', color: '#555' }}>
+              <span>Status: DALAM PENGERJAAN</span>
             </div>
           )}
 
           <div className="receipt-divider"></div>
           <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px', whiteSpace: 'pre-line' }}>
-            {wrapEscposText(store?.receipt_footer || 'Terima kasih atas kunjungan Anda\nGaransi servis 3 hari.', 32)}
+            {isDraft ? (
+              wrapEscposText('* Simpan tanda terima ini sebagai bukti pengambilan motor Anda.\n* Estimasi biaya dapat berubah jika ada tambahan pengerjaan.', 32)
+            ) : (
+              wrapEscposText(store?.receipt_footer || 'Terima kasih atas kunjungan Anda\nGaransi servis 3 hari.', 32)
+            )}
           </div>
         </div>
 
