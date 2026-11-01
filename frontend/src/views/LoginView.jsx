@@ -4,8 +4,8 @@ import { FaMotorcycle } from 'react-icons/fa6';
 import { IoLogInOutline, IoLockClosedOutline, IoPersonOutline } from 'react-icons/io5';
 
 export const LoginView = ({ onLoginSuccess }) => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -134,18 +134,11 @@ export const LoginView = ({ onLoginSuccess }) => {
 
         <div style={{
           marginTop: '1.5rem',
-          padding: '0.85rem',
-          background: 'var(--bg-input)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px',
-          fontSize: '0.78rem',
-          color: 'var(--text-dim)',
           textAlign: 'center',
+          fontSize: '0.75rem',
+          color: 'var(--text-dim)',
         }}>
-          <div>Akun Default Owner (Super Admin):</div>
-          <div style={{ color: '#60a5fa', fontWeight: 700, marginTop: '2px' }}>
-            Username: <code style={{ color: '#f8fafc' }}>admin</code> | Password: <code style={{ color: '#f8fafc' }}>admin123</code>
-          </div>
+          Sistem Kasir & Stok Gudang Monesca Motor
         </div>
       </div>
     </div>
