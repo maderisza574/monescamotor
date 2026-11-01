@@ -138,13 +138,140 @@ export const getLogoEscposCommands = (imageUrl = '/logo-thermal.png', maxWidth =
   });
 };
 
-// Cetak langsung lewat Web Bluetooth API (Chrome / Edge di Android & Windows)
-export const printViaWebBluetooth = async (transaction, store, options = {}) => {
-  if (!navigator.bluetooth) {
-    throw new Error('Browser ini belum mendukung Web Bluetooth. Silakan gunakan Google Chrome atau Cetak via Print Dialog.');
+// State koneksi bluetooth aktif (disimpan agar tidak perlu connect / pilih device berulang)
+let cachedDevice = null;
+let cachedCharacteristic = null;
+
+export const getConnectedBluetoothDevice = () => cachedDevice;
+
+export const isBluetoothConnected = () => {
+  return Boolean(cachedDevice && cachedDevice.gatt && cachedDevice.gatt.connected && cachedCharacteristic);
+};
+
+export const disconnectBluetooth = () => {
+  if (cachedDevice && cachedDevice.gatt && cachedDevice.gatt.connected) {
+    try {
+      cachedDevice.gatt.disconnect();
+    } catch (e) {
+      console.warn('Gagal disconnect printer:', e);
+    }
+  }
+  cachedDevice = null;
+  cachedCharacteristic = null;
+};
+
+// Cari characteristic yang mendukung penulisan (write / writeWithoutResponse)
+const findWritableCharacteristic = async (server) => {
+  if (!server.connected) {
+    await server.connect();
+    await new Promise((r) => setTimeout(r, 150));
   }
 
-  const { includeLogo = true } = options;
+  const services = await server.getPrimaryServices();
+  for (const s of services) {
+    try {
+      const chars = await s.getCharacteristics();
+      for (const c of chars) {
+        if (c.properties.write || c.properties.writeWithoutResponse) {
+          return c;
+        }
+      }
+    } catch (e) {
+      // Abaikan service yang diproteksi dan lanjutkan
+    }
+  }
+  return null;
+};
+
+// Ambil koneksi printer yang sudah ada atau hubungkan baru
+export const getOrConnectPrinter = async (forceSelect = false) => {
+  if (!navigator.bluetooth) {
+    throw new Error('Browser ini belum mendukung Web Bluetooth. Silakan gunakan Google Chrome di Android / Windows / Mac.');
+  }
+
+  // 1. Jika sudah terkoneksi dan tidak minta ganti device, pakai langsung (INSTAN tanpa popup!)
+  if (!forceSelect && cachedDevice && cachedDevice.gatt && cachedDevice.gatt.connected && cachedCharacteristic) {
+    return cachedCharacteristic;
+  }
+
+  // 2. Jika device sudah pernah dipilih tapi koneksi GATT tidur / terputus, coba reconnect langsung tanpa popup
+  if (!forceSelect && cachedDevice && cachedDevice.gatt) {
+    try {
+      let server;
+      if (!cachedDevice.gatt.connected) {
+        server = await cachedDevice.gatt.connect();
+        await new Promise((r) => setTimeout(r, 150));
+      } else {
+        server = cachedDevice.gatt;
+      }
+
+      const char = await findWritableCharacteristic(server);
+      if (char) {
+        cachedCharacteristic = char;
+        return cachedCharacteristic;
+      }
+    } catch (reconnectErr) {
+      console.warn('Koneksi ulang ke printer lama gagal, membuka jendela pilihan printer...', reconnectErr);
+    }
+  }
+
+  // 3. Minta user memilih printer bluetooth (hanya saat pertama kali atau saat klik Ganti Printer)
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [
+      '000018f0-0000-1000-8000-00805f9b34fb', // Thermal printer standard
+      '0000ffe0-0000-1000-8000-00805f9b34fb', // Generic Serial / POS
+      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent
+      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '0000af30-0000-1000-8000-00805f9b34fb',
+    ],
+  });
+
+  cachedDevice = device;
+
+  // Pasang listener saat printer mati atau di luar jangkauan
+  device.addEventListener('gattserverdisconnected', () => {
+    console.warn('Printer bluetooth terputus.');
+    cachedCharacteristic = null;
+  });
+
+  let server;
+  if (!device.gatt.connected) {
+    server = await device.gatt.connect();
+  } else {
+    server = device.gatt;
+  }
+
+  // Jeda 200ms untuk negosiasi GATT handshake agar stabil
+  await new Promise((r) => setTimeout(r, 200));
+
+  const char = await findWritableCharacteristic(server);
+  if (!char) {
+    throw new Error('Tidak dapat menemukan jalur tulis pada printer bluetooth ini. Pastikan printer dalam keadaan ON.');
+  }
+
+  cachedCharacteristic = char;
+  return cachedCharacteristic;
+};
+
+// Kirim data byte per chunk ke printer thermal
+const sendChunks = async (characteristic, data, chunkSize = 64) => {
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.slice(i, i + chunkSize);
+    if (characteristic.writeValueWithoutResponse) {
+      await characteristic.writeValueWithoutResponse(chunk);
+    } else {
+      await characteristic.writeValue(chunk);
+    }
+    // Delay 20ms agar buffer mikrokontroler printer tidak overflow
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
+
+// Cetak langsung lewat Web Bluetooth API (Chrome / Edge di Android & Windows)
+export const printViaWebBluetooth = async (transaction, store, options = {}) => {
+  const { includeLogo = true, forceSelect = false } = options;
   const storeName = (store?.store_name || 'MONESCA MOTOR').toUpperCase();
   const tagline = store?.tagline || 'Pusat Sparepart & Servis Motor';
   const address = store?.address || 'Jl. Raya Bengkel';
@@ -231,50 +358,29 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
     fullData = textBytes;
   }
 
-  // Request device bluetooth
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      '000018f0-0000-1000-8000-00805f9b34fb', // Thermal printer service standard
-      '0000ffe0-0000-1000-8000-00805f9b34fb', // Generic serial service
-      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent
-      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-    ],
-  });
+  // Ambil koneksi printer (reusable singleton)
+  let characteristic = await getOrConnectPrinter(forceSelect);
 
-  const server = await device.gatt.connect();
-
-  // Cari service & characteristic printer yang writable
-  let characteristic = null;
-  const services = await server.getPrimaryServices();
-  for (const s of services) {
-    const chars = await s.getCharacteristics();
-    for (const c of chars) {
-      if (c.properties.write || c.properties.writeWithoutResponse) {
-        characteristic = c;
-        break;
+  try {
+    await sendChunks(characteristic, fullData);
+  } catch (writeErr) {
+    console.warn('Gagal saat mengirim data ke printer, mencoba reconnect 1x...', writeErr);
+    // Jika koneksi terputus saat pengiriman, reconnect otomatis 1x
+    cachedCharacteristic = null;
+    if (cachedDevice && cachedDevice.gatt) {
+      const server = await cachedDevice.gatt.connect();
+      await new Promise((r) => setTimeout(r, 200));
+      characteristic = await findWritableCharacteristic(server);
+      if (characteristic) {
+        cachedCharacteristic = characteristic;
+        await sendChunks(characteristic, fullData);
+        return true;
       }
     }
-    if (characteristic) break;
+    throw writeErr;
   }
 
-  if (!characteristic) {
-    throw new Error('Tidak dapat menemukan jalur tulis pada printer bluetooth ini.');
-  }
-
-  // Kirim data per chunk (maksimal 100 bytes per chunk untuk stabilitas bluetooth)
-  const chunkSize = 100;
-  for (let i = 0; i < fullData.length; i += chunkSize) {
-    const chunk = fullData.slice(i, i + chunkSize);
-    if (characteristic.writeValueWithoutResponse) {
-      await characteristic.writeValueWithoutResponse(chunk);
-    } else {
-      await characteristic.writeValue(chunk);
-    }
-    // Delay 15ms agar buffer penerima printer thermal tidak kelebihan beban saat menerima gambar
-    await new Promise((resolve) => setTimeout(resolve, 15));
-  }
-
-  await device.gatt.disconnect();
+  // PENTING: JANGAN disconnect device di sini!
+  // Biarkan koneksi tetap tersambung sehingga cetak transaksi berikutnya bisa langsung instan tanpa popup!
   return true;
 };

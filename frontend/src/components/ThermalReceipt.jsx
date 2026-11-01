@@ -1,28 +1,72 @@
-import React, { useState } from 'react';
-import { printViaWebBluetooth, formatCurrency, formatNumber } from '../utils/bluetoothPrinter';
-import { IoBluetoothOutline, IoPrintOutline, IoCloseCircleOutline, IoCheckmarkCircleOutline } from 'react-icons/io5';
+import React, { useState, useEffect } from 'react';
+import { 
+  printViaWebBluetooth, 
+  formatCurrency, 
+  formatNumber,
+  getConnectedBluetoothDevice,
+  isBluetoothConnected,
+  disconnectBluetooth
+} from '../utils/bluetoothPrinter';
+import { 
+  IoBluetoothOutline, 
+  IoPrintOutline, 
+  IoCloseCircleOutline, 
+  IoCheckmarkCircleOutline,
+  IoSyncOutline
+} from 'react-icons/io5';
 
 export const ThermalReceipt = ({ transaction, store, onClose }) => {
   const [printingBt, setPrintingBt] = useState(false);
   const [btStatus, setBtStatus] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [connectedDeviceName, setConnectedDeviceName] = useState(null);
+
+  useEffect(() => {
+    const dev = getConnectedBluetoothDevice();
+    if (dev && dev.name) {
+      setConnectedDeviceName(dev.name);
+    }
+  }, []);
 
   if (!transaction) return null;
 
-  const handlePrintBluetooth = async () => {
+  const handlePrintBluetooth = async (forceSelect = false) => {
     try {
       setPrintingBt(true);
       setErrorMsg(null);
-      setBtStatus('Mencari & menghubungkan printer bluetooth...');
-      await printViaWebBluetooth(transaction, store, { includeLogo: true });
-      setBtStatus('Struk berhasil dicetak ke printer bluetooth!');
-      setTimeout(() => setBtStatus(null), 4000);
+      
+      const dev = getConnectedBluetoothDevice();
+      if (!forceSelect && dev && isBluetoothConnected()) {
+        setBtStatus(`Mengirim ke ${dev.name || 'printer bluetooth'}...`);
+      } else {
+        setBtStatus('Menghubungkan printer bluetooth...');
+      }
+
+      await printViaWebBluetooth(transaction, store, { 
+        includeLogo: true, 
+        forceSelect 
+      });
+
+      const currentDev = getConnectedBluetoothDevice();
+      if (currentDev && currentDev.name) {
+        setConnectedDeviceName(currentDev.name);
+      }
+
+      setBtStatus('✓ Struk berhasil dicetak!');
+      setTimeout(() => setBtStatus(null), 3500);
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || 'Gagal mencetak via Bluetooth. Pastikan bluetooth aktif atau gunakan tombol Cetak Sistem.');
+      setErrorMsg(err.message || 'Gagal mencetak via Bluetooth. Pastikan bluetooth aktif atau gunakan Cetak Standar.');
     } finally {
       setPrintingBt(false);
     }
+  };
+
+  const handleDisconnect = () => {
+    disconnectBluetooth();
+    setConnectedDeviceName(null);
+    setBtStatus('Koneksi printer telah diputus.');
+    setTimeout(() => setBtStatus(null), 3000);
   };
 
   const handleStandardPrint = () => {
@@ -172,15 +216,46 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
           )}
 
           <div className="receipt-divider"></div>
-          <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px' }}>
+          <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px', whiteSpace: 'pre-line' }}>
             {store?.receipt_footer || 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.'}
           </div>
         </div>
 
+        {/* STATUS KONEKSI PRINTER */}
+        {connectedDeviceName && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.75rem',
+            color: '#34d399',
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            padding: '4px 8px',
+            borderRadius: '6px',
+            marginBottom: '0.65rem'
+          }}>
+            <span>✓ Terhubung: <strong>{connectedDeviceName}</strong></span>
+            <button
+              onClick={() => handlePrintBluetooth(true)}
+              style={{
+                background: 'transparent',
+                color: '#60a5fa',
+                fontSize: '0.72rem',
+                textDecoration: 'underline',
+                padding: '2px 4px'
+              }}
+              title="Ganti printer bluetooth lain"
+            >
+              Ganti Printer
+            </button>
+          </div>
+        )}
+
         {/* TOMBOL AKSI CETAK */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
           <button
-            onClick={handlePrintBluetooth}
+            onClick={() => handlePrintBluetooth(false)}
             disabled={printingBt}
             style={{
               padding: '0.75rem',
@@ -196,7 +271,7 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
             }}
           >
             <IoBluetoothOutline size={18} />
-            {printingBt ? 'Mencetak...' : 'Bluetooth'}
+            {printingBt ? 'Mencetak...' : (connectedDeviceName ? 'Cetak (Instan)' : 'Bluetooth')}
           </button>
 
           <button
