@@ -28,11 +28,13 @@ export const LoginView = ({ onLoginSuccess }) => {
 
   return (
     <div style={{
-      minHeight: '75vh',
+      minHeight: '100vh',
+      width: '100%',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '1rem',
+      background: 'radial-gradient(ellipse at top, #1e293b, #0b1120 70%)',
     }}>
       <div style={{
         background: 'var(--bg-card)',

@@ -9,7 +9,7 @@ import { SettingsView } from './views/SettingsView';
 import { LoginView } from './views/LoginView';
 
 const MainApp = () => {
-  const { user, isSuperAdmin, isKasir, isGudang } = useAuth();
+  const { user, loading, isSuperAdmin, isKasir, isGudang } = useAuth();
 
   const getDefaultTab = (u) => {
     if (u?.role === 'GUDANG') return 'inventory';
@@ -27,14 +27,36 @@ const MainApp = () => {
     }
   }, [user]);
 
-  // Jika belum login, wajib masuk ke halaman login terlebih dahulu
+  // Loading state saat cek sesi login tersimpan
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#0b1120',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        gap: '0.85rem',
+      }}>
+        <img 
+          src="/logo.png" 
+          alt="Monesca Motor" 
+          style={{ height: '48px', filter: 'drop-shadow(0 4px 14px rgba(37, 99, 235, 0.45))' }} 
+        />
+        <div style={{ color: '#94a3b8', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}>
+          Memuat sistem Monesca Motor...
+        </div>
+      </div>
+    );
+  }
+
+  // Jika belum login, WAJIB tampil form login (Orang asing/iseng tidak bisa masuk atau lihat data apapun)
   if (!user) {
     return (
-      <div className="app-layout">
-        <LoginView onLoginSuccess={(loggedInUser) => {
-          setActiveTab(getDefaultTab(loggedInUser));
-        }} />
-      </div>
+      <LoginView onLoginSuccess={(loggedInUser) => {
+        setActiveTab(getDefaultTab(loggedInUser));
+      }} />
     );
   }
 
