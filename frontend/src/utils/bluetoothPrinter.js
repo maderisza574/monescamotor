@@ -25,6 +25,67 @@ export const formatRow58mm = (left, right, totalWidth = 32) => {
   return leftStr + ' '.repeat(spaceNeeded) + rightStr + '\n';
 };
 
+/**
+ * Bungkus teks agar pas di kertas thermal 58mm (maks 32 karakter per baris)
+ * Memecah baris berdasarkan tanda koma atau spasi kata (bukan memotong kata di tengah)
+ * dan mengonversi literal '\n' menjadi baris baru ESC/POS sebenarnya.
+ */
+export const wrapEscposText = (text, maxChars = 32) => {
+  if (!text) return '';
+  const normalized = String(text)
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  const lines = normalized.split('\n');
+  const result = [];
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+    if (trimmed.length <= maxChars) {
+      result.push(trimmed);
+      continue;
+    }
+
+    // Jika ada tanda koma dan baris terlalu panjang (seperti alamat), utamakan potong setelah koma
+    if (trimmed.includes(',')) {
+      const parts = trimmed.split(/,\s*/);
+      let curr = '';
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i] + (i < parts.length - 1 ? ',' : '');
+        if (!curr) {
+          curr = p;
+        } else if ((curr + ' ' + p).length <= maxChars) {
+          curr += ' ' + p;
+        } else {
+          result.push(curr);
+          curr = p;
+        }
+      }
+      if (curr) result.push(curr);
+      continue;
+    }
+
+    // Pemecahan per batas kata
+    const words = trimmed.split(/\s+/);
+    let curr = '';
+    for (const w of words) {
+      if (!curr) {
+        curr = w;
+      } else if ((curr + ' ' + w).length <= maxChars) {
+        curr += ' ' + w;
+      } else {
+        result.push(curr);
+        curr = w;
+      }
+    }
+    if (curr) result.push(curr);
+  }
+
+  return result.join('\n');
+};
+
 export const formatCurrency = (amount) => {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -324,7 +385,12 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
   const tagline = store?.tagline || 'Pusat Sparepart & Servis Motor';
   const address = store?.address || 'Jl. Raya Bengkel';
   const phone = store?.phone ? `Telp: ${store.phone}` : '';
-  const footer = store?.receipt_footer || 'Terima kasih atas kunjungan Anda!';
+  const footer = store?.receipt_footer || 'Terima kasih atas kunjungan Anda\nGaransi servis 3 hari.';
+
+  // Format baris teks agar pas di 58mm (32 kolom) tanpa memotong kata dan tanpa literal '\n'
+  const formattedAddress = wrapEscposText(address, 32);
+  const formattedTagline = wrapEscposText(tagline, 32);
+  const formattedFooter = wrapEscposText(footer, 32);
 
   // Ambil perintah raster gambar logo jika diaktifkan
   let logoBytes = new Uint8Array(0);
@@ -340,8 +406,8 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
   let text = escposFormat.INIT;
   text += escposFormat.ALIGN_CENTER;
   text += escposFormat.BOLD_ON + storeName + '\n' + escposFormat.BOLD_OFF;
-  text += tagline + '\n';
-  text += address + '\n';
+  if (formattedTagline) text += formattedTagline + '\n';
+  if (formattedAddress) text += formattedAddress + '\n';
   if (phone) text += phone + '\n';
   text += '--------------------------------\n';
   text += escposFormat.ALIGN_LEFT;
@@ -383,7 +449,7 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
   }
   text += '--------------------------------\n';
   text += escposFormat.ALIGN_CENTER;
-  text += footer + '\n';
+  if (formattedFooter) text += formattedFooter + '\n';
   text += escposFormat.FEED_4;
 
   const encoder = new TextEncoder();

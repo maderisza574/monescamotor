@@ -3,6 +3,7 @@ import {
   printViaWebBluetooth, 
   formatCurrency, 
   formatNumber,
+  wrapEscposText,
   getConnectedBluetoothDevice,
   isBluetoothConnected,
   disconnectBluetooth
@@ -158,11 +159,11 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
               }} 
             />
           </div>
-          <div className="receipt-center" style={{ fontSize: '11px', color: '#555' }}>
-            {store?.tagline || 'Pusat Sparepart & Servis Motor'}
+          <div className="receipt-center" style={{ fontSize: '11px', color: '#555', whiteSpace: 'pre-line' }}>
+            {wrapEscposText(store?.tagline || 'Pusat Sparepart & Servis Motor', 32)}
           </div>
-          <div className="receipt-center" style={{ fontSize: '10px', color: '#555' }}>
-            {store?.address || 'Jl. Raya Motor No. 123'}
+          <div className="receipt-center" style={{ fontSize: '10px', color: '#555', whiteSpace: 'pre-line' }}>
+            {wrapEscposText(store?.address || 'Jl. Raya Motor No. 123', 32)}
           </div>
           {store?.phone && (
             <div className="receipt-center" style={{ fontSize: '10px', color: '#555' }}>
@@ -242,7 +243,7 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
 
           <div className="receipt-divider"></div>
           <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px', whiteSpace: 'pre-line' }}>
-            {(store?.receipt_footer || 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.').replace(/\\n/g, '\n')}
+            {wrapEscposText(store?.receipt_footer || 'Terima kasih atas kunjungan Anda\nGaransi servis 3 hari.', 32)}
           </div>
         </div>
 

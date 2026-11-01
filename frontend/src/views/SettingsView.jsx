@@ -40,11 +40,11 @@ export const SettingsView = () => {
     try {
       setSaving(true);
       await api.patch('/settings', {
-        store_name: storeName,
-        tagline,
-        address,
-        phone,
-        receipt_footer: receiptFooter,
+        store_name: storeName.trim(),
+        tagline: tagline.trim(),
+        address: address.trim(),
+        phone: phone.trim(),
+        receipt_footer: receiptFooter.replace(/\\n/g, '\n').trim(),
       });
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -178,12 +178,16 @@ export const SettingsView = () => {
 
           <div className="form-group">
             <label className="form-label">Alamat Lengkap</label>
-            <input
-              type="text"
-              className="form-input"
+            <textarea
+              className="form-textarea"
+              rows="2"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              placeholder="Contoh: Jl. Sunan Bonang, Tambak Sari Kidul"
             />
+            <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+              Tips kertas 58mm: Pisahkan dengan koma atau baris baru agar rapi dan tidak terpotong.
+            </small>
           </div>
 
           <div className="form-group">
@@ -200,10 +204,14 @@ export const SettingsView = () => {
             <label className="form-label">Catatan Kaki Struk (Footer)</label>
             <textarea
               className="form-textarea"
-              rows="3"
+              rows="2"
               value={receiptFooter}
               onChange={(e) => setReceiptFooter(e.target.value)}
+              placeholder="Contoh: Terima kasih atas kunjungan Anda&#10;Garansi servis 3 hari."
             />
+            <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+              Tekan Enter untuk membuat baris baru. Jangan ketik simbol '\n' secara manual.
+            </small>
           </div>
 
           <button
