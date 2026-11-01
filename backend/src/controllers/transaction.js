@@ -125,4 +125,27 @@ module.exports = {
       return wrapper.response(response, 404, "Transaksi tidak ditemukan", error);
     }
   },
+
+  deleteTransaction: async (request, response) => {
+    try {
+      const { id } = request.params;
+      const { restore_stock = true } = request.body || {};
+      await transactionModel.deleteTransaction(id, restore_stock);
+      return wrapper.response(response, 200, "Transaksi berhasil dihapus");
+    } catch (error) {
+      console.error(error);
+      return wrapper.response(response, 500, "Gagal menghapus transaksi", error);
+    }
+  },
+
+  resetAllTransactions: async (request, response) => {
+    try {
+      const { restore_stock = true } = request.body || {};
+      await transactionModel.resetAllTransactions(restore_stock);
+      return wrapper.response(response, 200, "Seluruh transaksi dan omzet berhasil di-reset");
+    } catch (error) {
+      console.error(error);
+      return wrapper.response(response, 500, "Gagal mereset transaksi dan omzet", error);
+    }
+  },
 };

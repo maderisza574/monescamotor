@@ -12,7 +12,10 @@ import {
   IoStatsChartOutline,
   IoFilterOutline,
   IoRefreshOutline,
-  IoWalletOutline
+  IoWalletOutline,
+  IoTrashOutline,
+  IoTrashBinOutline,
+  IoAlertCircleOutline
 } from 'react-icons/io5';
 
 const MONTH_NAMES = [
@@ -47,6 +50,12 @@ export const TransactionsView = () => {
   const [customDate, setCustomDate] = useState(currentParts.dateString);
   const [customMonth, setCustomMonth] = useState(currentParts.monthString);
 
+  // State Modal Reset Omzet (Khusus Owner)
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetRestoreStock, setResetRestoreStock] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+
   useEffect(() => {
     fetchTransactions();
     fetchStoreSettings();
@@ -70,6 +79,48 @@ export const TransactionsView = () => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Hapus satu transaksi (Khusus Owner)
+  const handleDeleteTx = async (tx) => {
+    if (!window.confirm(`Yakin ingin menghapus transaksi "${tx.invoice_number}" sebesar ${formatCurrency(tx.total_amount)}?\n\nStok barang yang pernah terjual pada transaksi ini akan otomatis dikembalikan ke gudang.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await api.delete(`/transactions/${tx.id}`);
+      await fetchTransactions();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Gagal menghapus transaksi');
+      setLoading(false);
+    }
+  };
+
+  // Reset seluruh omzet dan transaksi (Khusus Owner)
+  const handleResetAll = async (e) => {
+    e.preventDefault();
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      alert('Silakan ketik "RESET" pada kolom konfirmasi sebelum melanjutkan.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      await api.delete('/transactions/reset-all', {
+        data: { restore_stock: resetRestoreStock }
+      });
+      setShowResetModal(false);
+      setResetConfirmText('');
+      await fetchTransactions();
+      alert('Seluruh transaksi berhasil dihapus dan omzet telah di-reset menjadi Rp 0!');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Gagal mereset omzet');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -518,6 +569,31 @@ export const TransactionsView = () => {
           >
             <IoRefreshOutline size={16} />
           </button>
+
+          {/* RESET OMZET (KHUSUS OWNER) */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setShowResetModal(true)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: '#f87171',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                marginLeft: '6px'
+              }}
+              title="Hapus seluruh riwayat transaksi & reset omzet ke Rp 0 (Khusus Owner)"
+            >
+              <IoTrashBinOutline size={15} />
+              <span>Reset Omzet</span>
+            </button>
+          )}
         </div>
 
         {/* INPUT PENCARIAN TEKS */}
@@ -637,24 +713,49 @@ export const TransactionsView = () => {
                   <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#34d399' }}>
                     {formatCurrency(tx.total_amount)}
                   </td>
-                  <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                    <button
-                      onClick={() => setSelectedTx(tx)}
-                      style={{
-                        padding: '0.4rem 0.75rem',
-                        background: 'rgba(59, 130, 246, 0.15)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        color: '#60a5fa',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      <IoPrintOutline /> Cetak Struk
-                    </button>
+                  <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        onClick={() => setSelectedTx(tx)}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          background: 'rgba(59, 130, 246, 0.15)',
+                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          color: '#60a5fa',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <IoPrintOutline /> Cetak Struk
+                      </button>
+
+                      {isSuperAdmin && (
+                        <button
+                          onClick={() => handleDeleteTx(tx)}
+                          style={{
+                            padding: '0.4rem 0.6rem',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#f87171',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          title="Hapus transaksi ini (Khusus Owner)"
+                        >
+                          <IoTrashOutline size={16} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -670,6 +771,95 @@ export const TransactionsView = () => {
           store={storeSettings}
           onClose={() => setSelectedTx(null)}
         />
+      )}
+
+      {/* MODAL RESET OMZET & HAPUS SEMUA TRANSAKSI (KHUSUS OWNER) */}
+      {showResetModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#f87171' }}>
+                <IoAlertCircleOutline size={22} /> Reset Seluruh Omzet
+              </h3>
+              <button className="modal-close-btn" onClick={() => setShowResetModal(false)}>
+                &times;
+              </button>
+            </div>
+
+            <div style={{ padding: '0.5rem 0' }}>
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                padding: '0.85rem',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                color: '#fca5a5',
+                lineHeight: 1.5,
+                marginBottom: '1rem'
+              }}>
+                <strong>Peringatan Khusus Owner:</strong> Tindakan ini akan menghapus <strong>seluruh {transactions.length} riwayat transaksi</strong> dan mereset nilai omzet menjadi <strong>Rp 0</strong>. Fitur ini cocok digunakan untuk membersihkan transaksi uji coba sebelum toko resmi berjalan.
+              </div>
+
+              <form onSubmit={handleResetAll}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer', color: 'var(--text-main)' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={resetRestoreStock} 
+                      onChange={(e) => setResetRestoreStock(e.target.checked)} 
+                    />
+                    <span>Kembalikan stok fisik barang yang terjual ke gudang</span>
+                  </label>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                    Ketik kata <strong style={{ color: '#ef4444' }}>RESET</strong> di bawah untuk konfirmasi:
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ketik RESET"
+                    value={resetConfirmText}
+                    onChange={(e) => setResetConfirmText(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '1.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setShowResetModal(false); setResetConfirmText(''); }}
+                    style={{
+                      padding: '0.75rem',
+                      background: 'transparent',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-muted)',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                    style={{
+                      padding: '0.75rem',
+                      background: resetConfirmText.trim().toUpperCase() === 'RESET' ? '#ef4444' : '#64748b',
+                      color: '#fff',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      cursor: resetConfirmText.trim().toUpperCase() === 'RESET' ? 'pointer' : 'not-allowed',
+                      border: 'none',
+                    }}
+                  >
+                    {actionLoading ? 'Mereset...' : 'Ya, Reset Semua'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

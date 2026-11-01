@@ -153,4 +153,104 @@ module.exports = {
         }
       });
     }),
+
+  deleteTransaction: async (id, restoreStock = true) => {
+    // 1. Ambil data transaksi dan itemnya terlebih dahulu
+    const { data: trx, error: fetchErr } = await supabase
+      .from("transactions")
+      .select("*, items:transaction_items (*)")
+      .eq("id", id)
+      .single();
+
+    if (fetchErr) {
+      throw fetchErr;
+    }
+
+    // 2. Kembalikan stok fisik jika diminta (restoreStock = true)
+    if (restoreStock && trx && trx.items && trx.items.length > 0) {
+      for (const item of trx.items) {
+        if (!item.is_service && item.product_id) {
+          const { data: product } = await supabase
+            .from("products")
+            .select("stock")
+            .eq("id", item.product_id)
+            .single();
+
+          if (product) {
+            const prevStock = product.stock || 0;
+            const newStock = prevStock + Number(item.quantity);
+
+            await supabase
+              .from("products")
+              .update({ stock: newStock })
+              .eq("id", item.product_id);
+
+            await supabase.from("stock_movements").insert([
+              {
+                product_id: item.product_id,
+                type: "ADJUSTMENT",
+                quantity: Number(item.quantity),
+                previous_stock: prevStock,
+                current_stock: newStock,
+                notes: `Pembatalan/Hapus Transaksi #${trx.invoice_number}`,
+              },
+            ]);
+          }
+        }
+      }
+    }
+
+    // 3. Hapus transaksi (transaction_items otomatis terhapus via ON DELETE CASCADE di database)
+    const { error: delErr } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", id);
+
+    if (delErr) {
+      throw delErr;
+    }
+
+    return true;
+  },
+
+  resetAllTransactions: async (restoreStock = true) => {
+    // 1. Kembalikan seluruh stok barang terjual jika diminta
+    if (restoreStock) {
+      const { data: allItems } = await supabase
+        .from("transaction_items")
+        .select("*")
+        .eq("is_service", false);
+
+      if (allItems && allItems.length > 0) {
+        for (const item of allItems) {
+          if (item.product_id) {
+            const { data: product } = await supabase
+              .from("products")
+              .select("stock")
+              .eq("id", item.product_id)
+              .single();
+
+            if (product) {
+              await supabase
+                .from("products")
+                .update({ stock: (product.stock || 0) + Number(item.quantity) })
+                .eq("id", item.product_id);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Hapus seluruh data di tabel transactions (otomatis mengosongkan transaction_items juga)
+    const { error: delErr } = await supabase
+      .from("transactions")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+
+    if (delErr) {
+      throw delErr;
+    }
+
+    return true;
+  },
 };
