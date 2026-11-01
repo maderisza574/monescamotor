@@ -3,6 +3,11 @@ const Router = express.Router();
 const transactionController = require("../controllers/transaction");
 const { verifyToken, isSuperAdmin } = require("../middleware/auth");
 
+// Rute Draft Antrean Motor Ditinggal (Database Supabase)
+Router.get("/drafts/all", transactionController.getDrafts);
+Router.post("/drafts", transactionController.saveDraft);
+Router.delete("/drafts/:id", transactionController.deleteDraft);
+
 Router.get("/", transactionController.getAllTransactions);
 Router.get("/:id", transactionController.getTransactionById);
 Router.post("/", transactionController.createTransaction);

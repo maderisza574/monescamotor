@@ -78,17 +78,19 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     }
   });
 
-  const loadDrafts = () => {
+  const loadDrafts = async () => {
     try {
-      const s = localStorage.getItem('monesca_pos_drafts');
-      if (!s) {
-        setDrafts([]);
-        return;
-      }
-      const parsed = JSON.parse(s);
-      setDrafts(Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []));
+      const res = await api.get('/transactions/drafts/all');
+      setDrafts(res.data?.data || []);
     } catch (e) {
-      setDrafts([]);
+      console.error('Gagal mengambil draft dari database:', e);
+      try {
+        const s = localStorage.getItem('monesca_pos_drafts');
+        if (s) {
+          const parsed = JSON.parse(s);
+          setDrafts(Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []));
+        }
+      } catch (_) {}
     }
   };
 
@@ -148,16 +150,18 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     }
   };
 
-  // Hapus satu antrean draft
-  const handleDeleteDraft = (draftId) => {
-    if (window.confirm('Hapus antrean draft motor ini?')) {
-      const remaining = drafts.filter((d) => (d.draft_id || d.id) !== draftId);
-      setDrafts(remaining);
-      try {
-        localStorage.setItem('monesca_pos_drafts', JSON.stringify(remaining));
-      } catch (e) {
-        console.error(e);
-      }
+  // Hapus satu antrean draft dari database
+  const handleDeleteDraft = async (draftId) => {
+    if (!window.confirm('Hapus antrean draft motor ini dari database?')) return;
+    try {
+      setLoading(true);
+      await api.delete(`/transactions/drafts/${draftId}`);
+      await loadDrafts();
+    } catch (err) {
+      console.error('Gagal menghapus draft:', err);
+      alert(err.response?.data?.message || 'Gagal menghapus draft dari database');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -226,8 +230,8 @@ export const TransactionsView = ({ onNavigateToPos }) => {
 
   // Normalisasi Draft Antrean Motor Ditinggal
   const safeDrafts = (Array.isArray(drafts) ? drafts : []).map((d) => ({
-    id: d.draft_id || d.id || ('DRAFT-' + Math.random().toString(36).slice(2, 6)),
-    invoice_number: d.draft_id || d.invoice_number || 'DRAFT',
+    id: d.id || d.draft_id || ('DRAFT-' + Math.random().toString(36).slice(2, 6)),
+    invoice_number: d.invoice_number || d.draft_id || 'DRAFT',
     created_at: d.created_at || new Date().toISOString(),
     cashier_name: d.cashier_name || 'Kasir',
     customer_name: d.customer_name || 'Pelanggan Umum',

@@ -54,15 +54,8 @@ export const PosView = () => {
   const [cashGiven, setCashGiven] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Antrean Draft / Motor Ditinggal
-  const [drafts, setDrafts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('monesca_pos_drafts');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  // Antrean Draft / Motor Ditinggal (Tersimpan di Cloud Database Supabase)
+  const [drafts, setDrafts] = useState([]);
   const [showDraftsModal, setShowDraftsModal] = useState(false);
   const [activeDraftId, setActiveDraftId] = useState(null);
 
@@ -82,9 +75,47 @@ export const PosView = () => {
   const [processingOrder, setProcessingOrder] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
+  const fetchDrafts = async () => {
+    try {
+      // Migrasikan draft lokal lama ke server database (jika ada) agar bisa diakses multi-device
+      const localSaved = localStorage.getItem('monesca_pos_drafts');
+      if (localSaved) {
+        try {
+          const oldLocalDrafts = JSON.parse(localSaved);
+          if (Array.isArray(oldLocalDrafts) && oldLocalDrafts.length > 0) {
+            for (const oldD of oldLocalDrafts) {
+              if (oldD.items && oldD.items.length > 0) {
+                await api.post('/transactions/drafts', {
+                  customer_name: oldD.customer_name || 'Pelanggan Umum',
+                  vehicle_plate: oldD.vehicle_plate || null,
+                  vehicle_model: oldD.vehicle_model || null,
+                  discount: Number(oldD.discount || 0),
+                  notes: oldD.notes || null,
+                  items: oldD.items,
+                }).catch(() => {});
+              }
+            }
+          }
+          localStorage.removeItem('monesca_pos_drafts');
+        } catch (migErr) {
+          console.warn('Draft migration error:', migErr);
+        }
+      }
+
+      const res = await api.get('/transactions/drafts/all');
+      setDrafts(res.data?.data || []);
+    } catch (err) {
+      console.error('Gagal mengambil draft dari database:', err);
+    }
+  };
+
   useEffect(() => {
     fetchBrands();
     fetchStoreSettings();
+    fetchDrafts();
+
+    // Polling antrean draft setiap 12 detik agar laptop owner & kasir selalu sinkron
+    const interval = setInterval(fetchDrafts, 12000);
 
     // Periksa apakah ada draft yang diminta untuk dibuka dari halaman Riwayat Transaksi
     try {
@@ -106,6 +137,7 @@ export const PosView = () => {
 
     window.addEventListener('monesca_load_draft', handleCustomLoadDraft);
     return () => {
+      clearInterval(interval);
       window.removeEventListener('monesca_load_draft', handleCustomLoadDraft);
     };
   }, []);
@@ -153,12 +185,174 @@ export const PosView = () => {
     }
   };
 
-  const saveDraftsToStorage = (newDrafts) => {
-    setDrafts(newDrafts);
+  const handleSaveDraft = async () => {
+    if (cart.length === 0) {
+      alert('Keranjang masih kosong. Tambahkan sparepart atau jasa terlebih dahulu.');
+      return;
+    }
+
+    const draftPayload = {
+      draft_id: activeDraftId || undefined,
+      customer_name: customerName.trim() || 'Pelanggan Umum',
+      vehicle_plate: vehiclePlate.trim().toUpperCase() || '',
+      vehicle_model: vehicleModel.trim() || '',
+      discount: Number(discount) || 0,
+      notes: notes || '',
+      items: cart.map((item) => ({
+        product_id: item.product_id || null,
+        product_name: item.product_name,
+        brand_name: item.brand_name || null,
+        is_service: Boolean(item.is_service),
+        cost_price: Number(item.cost_price || 0),
+        unit_price: Number(item.unit_price || 0),
+        quantity: Number(item.quantity || 1),
+        subtotal: Number(item.subtotal || item.unit_price * item.quantity),
+      })),
+    };
+
     try {
-      localStorage.setItem('monesca_pos_drafts', JSON.stringify(newDrafts));
-    } catch (e) {
-      console.error('Gagal menyimpan drafts ke localStorage', e);
+      setProcessingOrder(true);
+      await api.post('/transactions/drafts', draftPayload);
+
+      // Refresh data draft dari database cloud Supabase
+      await fetchDrafts();
+
+      // JANGAN LAKUKAN PRINT! (Draft masuk ke antrean database tanpa popup cetak)
+      // Reset keranjang untuk melayani konsumen lain
+      setCart([]);
+      setVehiclePlate('');
+      setVehicleModel('');
+      setCustomerName('Pelanggan Umum');
+      setDiscount(0);
+      setCashGiven('');
+      setNotes('');
+      setActiveDraftId(null);
+      setMobileTab('catalog');
+
+      const plateLabel = draftPayload.vehicle_plate ? `(${draftPayload.vehicle_plate})` : '';
+      alert(`✓ Motor ${plateLabel} berhasil disimpan ke database cloud! Antrean ini otomatis muncul di laptop owner & laptop kasir.`);
+    } catch (err) {
+      console.error('Gagal menyimpan draft:', err);
+      alert(err.response?.data?.message || 'Gagal menyimpan draft ke database');
+    } finally {
+      setProcessingOrder(false);
+    }
+  };
+
+  const handleLoadDraft = (draft) => {
+    if (cart.length > 0) {
+      const ok = window.confirm(
+        'Keranjang saat ini masih berisi item. Apakah ingin menimpanya dengan antrean motor ini?'
+      );
+      if (!ok) return;
+    }
+
+    const loadedItems = (draft.items || []).map((it) => ({
+      cart_item_id: 'loaded_' + (it.product_id || Math.random().toString(36).slice(2, 7)),
+      product_id: it.product_id || null,
+      product_name: it.product_name,
+      brand_name: it.brand_name || (it.product_id ? null : (it.is_service ? 'JASA' : 'BELI LUAR')),
+      cost_price: Number(it.cost_price || 0),
+      unit_price: Number(it.unit_price || 0),
+      quantity: Number(it.quantity || 1),
+      subtotal: Number(it.subtotal || (Number(it.unit_price || 0) * Number(it.quantity || 1))),
+      is_service: Boolean(it.is_service),
+      max_stock: 9999,
+      is_manual: !it.product_id,
+    }));
+
+    setCart(loadedItems);
+    setVehiclePlate(draft.vehicle_plate || '');
+    setVehicleModel(draft.vehicle_model || '');
+    setCustomerName(draft.customer_name || 'Pelanggan Umum');
+    setDiscount(Number(draft.discount || 0));
+    setNotes(draft.notes || '');
+    setActiveDraftId(draft.id || draft.draft_id);
+    setShowDraftsModal(false);
+    setMobileTab('cart');
+  };
+
+  const handleDeleteDraft = async (draftId) => {
+    if (window.confirm('Hapus antrean motor ini dari daftar draft database?')) {
+      try {
+        await api.delete(`/transactions/drafts/${draftId}`);
+        await fetchDrafts();
+        if (activeDraftId === draftId) {
+          setActiveDraftId(null);
+        }
+      } catch (err) {
+        console.error('Gagal menghapus draft:', err);
+        alert(err.response?.data?.message || 'Gagal menghapus draft dari database');
+      }
+    }
+  };
+
+  // Kalkulasi Total
+  const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const totalAmount = Math.max(0, subtotal - Number(discount || 0));
+  const changeDue = paymentMethod === 'CASH' && cashGiven 
+    ? Math.max(0, Number(cashGiven) - totalAmount) 
+    : 0;
+
+  const handleQuickCash = (amount) => {
+    setCashGiven(amount);
+  };
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+
+    if (paymentMethod === 'CASH') {
+      const given = Number(cashGiven) || 0;
+      if (given < totalAmount) {
+        setErrorMessage(`Nominal bayar masih kurang Rp ${formatNumber(totalAmount - given)}`);
+        return;
+      }
+    }
+
+    try {
+      setProcessingOrder(true);
+      setErrorMessage(null);
+
+      const payload = {
+        draft_id: activeDraftId || null,
+        customer_name: customerName.trim() || 'Pelanggan Umum',
+        vehicle_plate: vehiclePlate.trim().toUpperCase() || null,
+        vehicle_model: vehicleModel.trim() || null,
+        discount: Number(discount) || 0,
+        payment_method: paymentMethod,
+        cash_given: paymentMethod === 'CASH' ? Number(cashGiven) : totalAmount,
+        notes: notes || null,
+        items: cart,
+      };
+
+      const res = await api.post('/transactions', payload);
+      const { transaction, store } = res.data.data;
+
+      // Segarkan daftar draft dari database cloud
+      await fetchDrafts();
+      setActiveDraftId(null);
+
+      // Bersihkan keranjang kasir
+      setCart([]);
+      setCashGiven('');
+      setVehiclePlate('');
+      setVehicleModel('');
+      setCustomerName('Pelanggan Umum');
+      setDiscount(0);
+      setNotes('');
+      setMobileTab('catalog');
+
+      // Refresh data produk
+      fetchProducts();
+
+      // Buka pop-up Struk Thermal Bluetooth
+      setCompletedTransaction(transaction);
+      if (store) setStoreSettings(store);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(err.response?.data?.message || 'Gagal memproses transaksi kasir');
+    } finally {
+      setProcessingOrder(false);
     }
   };
 
@@ -255,154 +449,6 @@ export const PosView = () => {
     setManualQty(1);
     setManualIsService(false);
     setShowManualModal(false);
-  };
-
-  const handleSaveDraft = () => {
-    if (cart.length === 0) {
-      alert('Keranjang masih kosong. Tambahkan sparepart atau jasa terlebih dahulu.');
-      return;
-    }
-
-    const draftId = activeDraftId || ('DRAFT-' + Date.now().toString().slice(-6));
-    const draftData = {
-      draft_id: draftId,
-      invoice_number: draftId,
-      is_draft: true,
-      created_at: new Date().toISOString(),
-      customer_name: customerName.trim() || 'Pelanggan Umum',
-      vehicle_plate: vehiclePlate.trim().toUpperCase() || '',
-      vehicle_model: vehicleModel.trim() || '',
-      discount: Number(discount) || 0,
-      notes: notes || '',
-      items: cart.map(item => ({ ...item })),
-      subtotal: subtotal,
-      total_amount: totalAmount,
-      cashier_name: 'Kasir',
-    };
-
-    const existingIndex = drafts.findIndex((d) => d.draft_id === draftId);
-    let updatedDrafts;
-    if (existingIndex >= 0) {
-      updatedDrafts = [...drafts];
-      updatedDrafts[existingIndex] = draftData;
-    } else {
-      updatedDrafts = [draftData, ...drafts];
-    }
-
-    saveDraftsToStorage(updatedDrafts);
-
-    // JANGAN LAKUKAN PRINT! (Draft masuk ke riwayat antrean tanpa popup cetak)
-    // Reset keranjang untuk melayani konsumen lain
-    setCart([]);
-    setVehiclePlate('');
-    setVehicleModel('');
-    setCustomerName('Pelanggan Umum');
-    setDiscount(0);
-    setCashGiven('');
-    setNotes('');
-    setActiveDraftId(null);
-    setMobileTab('catalog');
-
-    alert(`✓ Motor ${draftData.vehicle_plate || 'Tanpa Plat'} berhasil disimpan sebagai draft ke riwayat antrean. Anda dapat melengkapinya nanti sebelum mencetak struk!`);
-  };
-
-  const handleLoadDraft = (draft) => {
-    if (cart.length > 0) {
-      const ok = window.confirm(
-        'Keranjang saat ini masih berisi item. Apakah ingin menimpanya dengan antrean motor ini?'
-      );
-      if (!ok) return;
-    }
-
-    setCart(draft.items || []);
-    setVehiclePlate(draft.vehicle_plate || '');
-    setVehicleModel(draft.vehicle_model || '');
-    setCustomerName(draft.customer_name || 'Pelanggan Umum');
-    setDiscount(draft.discount || 0);
-    setNotes(draft.notes || '');
-    setActiveDraftId(draft.draft_id);
-    setShowDraftsModal(false);
-    setMobileTab('cart');
-  };
-
-  const handleDeleteDraft = (draftId) => {
-    if (window.confirm('Hapus antrean motor ini dari daftar draft?')) {
-      const filtered = drafts.filter((d) => d.draft_id !== draftId);
-      saveDraftsToStorage(filtered);
-      if (activeDraftId === draftId) {
-        setActiveDraftId(null);
-      }
-    }
-  };
-
-  // Kalkulasi Total
-  const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const totalAmount = Math.max(0, subtotal - Number(discount || 0));
-  const changeDue = paymentMethod === 'CASH' && cashGiven 
-    ? Math.max(0, Number(cashGiven) - totalAmount) 
-    : 0;
-
-  const handleQuickCash = (amount) => {
-    setCashGiven(amount);
-  };
-
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-
-    if (paymentMethod === 'CASH') {
-      const given = Number(cashGiven) || 0;
-      if (given < totalAmount) {
-        setErrorMessage(`Nominal bayar masih kurang Rp ${formatNumber(totalAmount - given)}`);
-        return;
-      }
-    }
-
-    try {
-      setProcessingOrder(true);
-      setErrorMessage(null);
-
-      const payload = {
-        customer_name: customerName.trim() || 'Pelanggan Umum',
-        vehicle_plate: vehiclePlate.trim().toUpperCase() || null,
-        vehicle_model: vehicleModel.trim() || null,
-        discount: Number(discount) || 0,
-        payment_method: paymentMethod,
-        cash_given: paymentMethod === 'CASH' ? Number(cashGiven) : totalAmount,
-        notes: notes || null,
-        items: cart,
-      };
-
-      const res = await api.post('/transactions', payload);
-      const { transaction, store } = res.data.data;
-
-      // Jika transaksi ini berasal dari antrean draft motor, hapus draft otomatis
-      if (activeDraftId) {
-        const remaining = drafts.filter((d) => d.draft_id !== activeDraftId);
-        saveDraftsToStorage(remaining);
-        setActiveDraftId(null);
-      }
-
-      // Bersihkan keranjang kasir
-      setCart([]);
-      setCashGiven('');
-      setVehiclePlate('');
-      setVehicleModel('');
-      setCustomerName('Pelanggan Umum');
-      setDiscount(0);
-      setMobileTab('catalog');
-
-      // Refresh data produk
-      fetchProducts();
-
-      // Buka pop-up Struk Thermal Bluetooth
-      setCompletedTransaction(transaction);
-      if (store) setStoreSettings(store);
-    } catch (err) {
-      console.error(err);
-      setErrorMessage(err.response?.data?.message || 'Gagal memproses transaksi kasir');
-    } finally {
-      setProcessingOrder(false);
-    }
   };
 
   const getBrandBadgeClass = (brandName, isService) => {
@@ -1269,94 +1315,97 @@ export const PosView = () => {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
-                {drafts.map((draft) => (
-                  <div
-                    key={draft.draft_id}
-                    style={{
-                      background: 'var(--bg-card)',
-                      border: activeDraftId === draft.draft_id ? '1px solid #eab308' : '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '0.75rem 0.85rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.45rem'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                        <span style={{
-                          background: '#1e293b',
-                          border: '1px solid #475569',
-                          color: '#f8fafc',
-                          fontWeight: 800,
-                          fontSize: '0.82rem',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          letterSpacing: '0.5px'
-                        }}>
-                          {draft.vehicle_plate || 'TANPA PLAT'}
-                        </span>
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
-                          {draft.vehicle_model || 'Motor'} - {draft.customer_name}
+                {drafts.map((draft) => {
+                  const dId = draft.id || draft.draft_id;
+                  return (
+                    <div
+                      key={dId}
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: activeDraftId === dId ? '1px solid #eab308' : '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '0.75rem 0.85rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.45rem'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                          <span style={{
+                            background: '#1e293b',
+                            border: '1px solid #475569',
+                            color: '#f8fafc',
+                            fontWeight: 800,
+                            fontSize: '0.82rem',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            letterSpacing: '0.5px'
+                          }}>
+                            {draft.vehicle_plate || 'TANPA PLAT'}
+                          </span>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                            {draft.vehicle_model || 'Motor'} - {draft.customer_name}
+                          </span>
+                        </div>
+
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                          {new Date(draft.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
 
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                        {new Date(draft.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
+                      {/* Rincian Ringkas Items */}
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {draft.items?.map((it) => `${it.quantity}x ${it.product_name}`).join(', ')}
+                      </div>
 
-                    {/* Rincian Ringkas Items */}
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {draft.items?.map((it) => `${it.quantity}x ${it.product_name}`).join(', ')}
-                    </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
+                        <span style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>
+                          {formatCurrency(draft.total_amount)}
+                        </span>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
-                      <span style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>
-                        {formatCurrency(draft.total_amount)}
-                      </span>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleLoadDraft(draft)}
+                            style={{
+                              background: '#2563eb',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '5px',
+                              padding: '5px 12px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            ✏️ Buka & Lengkapi / Bayar
+                          </button>
 
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleLoadDraft(draft)}
-                          style={{
-                            background: '#2563eb',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '5px',
-                            padding: '5px 12px',
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          ✏️ Buka & Lengkapi / Bayar
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDraft(draft.draft_id)}
-                          style={{
-                            background: 'transparent',
-                            color: '#f87171',
-                            border: '1px solid rgba(248, 113, 113, 0.25)',
-                            borderRadius: '5px',
-                            padding: '4px 6px',
-                            fontSize: '0.74rem',
-                            cursor: 'pointer'
-                          }}
-                          title="Hapus antrean draft"
-                        >
-                          <IoTrashOutline />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDraft(dId)}
+                            style={{
+                              background: 'transparent',
+                              color: '#f87171',
+                              border: '1px solid rgba(248, 113, 113, 0.25)',
+                              borderRadius: '5px',
+                              padding: '4px 6px',
+                              fontSize: '0.74rem',
+                              cursor: 'pointer'
+                            }}
+                            title="Hapus antrean draft"
+                          >
+                            <IoTrashOutline />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

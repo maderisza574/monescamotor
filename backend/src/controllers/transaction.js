@@ -66,6 +66,11 @@ module.exports = {
 
       const completedTrx = await transactionModel.createTransaction(trxPayload, items);
 
+      // Jika transaksi ini berasal dari antrean draft motor di database, hapus draft-nya
+      if (request.body.draft_id) {
+        await transactionModel.deleteDraft(request.body.draft_id).catch(() => {});
+      }
+
       // Ambil profil toko untuk cetak struk bluetooth
       const storeRes = await storeSettingsModel.getSettings().catch(() => ({ data: null }));
 
@@ -146,6 +151,114 @@ module.exports = {
     } catch (error) {
       console.error(error);
       return wrapper.response(response, 500, "Gagal mereset transaksi dan omzet", error);
+    }
+  },
+
+  // Simpan / Perbarui Antrean Draft Motor Ditinggal ke Database
+  saveDraft: async (request, response) => {
+    try {
+      const {
+        draft_id,
+        customer_name = "Pelanggan Umum",
+        customer_phone,
+        vehicle_plate,
+        vehicle_model,
+        discount = 0,
+        notes,
+        items = [],
+      } = request.body;
+
+      if (!items || items.length === 0) {
+        return wrapper.response(response, 400, "Keranjang draft tidak boleh kosong");
+      }
+
+      let subtotal = 0;
+      for (const item of items) {
+        if (!item.product_name || !item.unit_price || !item.quantity) {
+          return wrapper.response(response, 400, "Data item draft tidak valid");
+        }
+        subtotal += Number(item.unit_price) * Number(item.quantity);
+      }
+
+      const totalAmount = Math.max(0, subtotal - Number(discount));
+      const cashierName = request.user ? request.user.name : (request.body.cashier_name || "Kasir");
+
+      // Jika draft_id sudah ada di database, lakukan update
+      if (draft_id) {
+        try {
+          const updated = await transactionModel.updateDraft(
+            draft_id,
+            {
+              customer_name,
+              customer_phone: customer_phone || null,
+              vehicle_plate: vehicle_plate || null,
+              vehicle_model: vehicle_model || null,
+              subtotal,
+              discount: Number(discount),
+              total_amount: totalAmount,
+              notes: notes || null,
+            },
+            items
+          );
+
+          return wrapper.response(response, 200, "Draft berhasil diperbarui di database", updated);
+        } catch (e) {
+          console.warn("Update draft failed, will create new draft instead:", e.message);
+        }
+      }
+
+      // Buat nomor draft baru (format: DFT-YYYYMMDD-XXXX)
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const invoiceNumber = `DFT-${dateStr}-${randomSuffix}`;
+
+      const draftPayload = {
+        invoice_number: invoiceNumber,
+        cashier_name: cashierName,
+        customer_name,
+        customer_phone: customer_phone || null,
+        vehicle_plate: vehicle_plate || null,
+        vehicle_model: vehicle_model || null,
+        subtotal,
+        discount: Number(discount),
+        total_amount: totalAmount,
+        payment_method: "DRAFT",
+        cash_given: 0,
+        change_due: 0,
+        status: "DRAFT",
+        notes: notes || null,
+      };
+
+      const savedDraft = await transactionModel.createTransaction(draftPayload, items);
+
+      return wrapper.response(response, 201, "Draft berhasil disimpan ke database", savedDraft);
+    } catch (error) {
+      console.error("Save draft error:", error);
+      return wrapper.response(response, 500, "Gagal menyimpan draft ke database", error);
+    }
+  },
+
+  // Ambil Semua Draft Aktif dari Database
+  getDrafts: async (request, response) => {
+    try {
+      const drafts = await transactionModel.getDrafts();
+      return wrapper.response(response, 200, "Daftar draft berhasil diambil", drafts);
+    } catch (error) {
+      console.error("Get drafts error:", error);
+      return wrapper.response(response, 500, "Gagal mengambil daftar draft", error);
+    }
+  },
+
+  // Hapus Draft dari Database
+  deleteDraft: async (request, response) => {
+    try {
+      const { id } = request.params;
+      await transactionModel.deleteDraft(id);
+      return wrapper.response(response, 200, "Draft berhasil dihapus dari database");
+    } catch (error) {
+      console.error("Delete draft error:", error);
+      return wrapper.response(response, 500, "Gagal menghapus draft", error);
     }
   },
 };
