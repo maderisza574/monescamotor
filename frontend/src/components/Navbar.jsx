@@ -12,13 +12,17 @@ import {
 import { FaMotorcycle } from 'react-icons/fa6';
 
 export const Navbar = ({ activeTab, setActiveTab }) => {
-  const { user, logout, isSuperAdmin } = useAuth();
+  const { user, logout, isSuperAdmin, isKasir, isGudang } = useAuth();
 
   return (
     <>
       <header className="navbar">
         <div className="navbar-container">
-          <div className="brand-logo" onClick={() => setActiveTab('pos')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div 
+            className="brand-logo" 
+            onClick={() => setActiveTab(isGudang ? 'inventory' : 'pos')} 
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.65rem' }}
+          >
             <img 
               src="/logo.png" 
               alt="Monesca Motor" 
@@ -29,34 +33,46 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
                 filter: 'drop-shadow(0 2px 8px rgba(37, 99, 235, 0.4))'
               }} 
             />
-            <span className="brand-badge">POS & STOK</span>
+            <span className="brand-badge">
+              {isSuperAdmin ? 'POS & STOK' : isGudang ? 'STOK GUDANG' : 'KASIR POS'}
+            </span>
           </div>
 
           <nav className="nav-links">
-            <button
-              className={`nav-btn ${activeTab === 'pos' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pos')}
-            >
-              <IoReceiptOutline size={18} />
-              <span>Kasir POS</span>
-            </button>
+            {/* 1. Kasir POS: Khusus OWNER & KASIR (Gudang Dihide) */}
+            {(isSuperAdmin || isKasir) && (
+              <button
+                className={`nav-btn ${activeTab === 'pos' ? 'active' : ''}`}
+                onClick={() => setActiveTab('pos')}
+              >
+                <IoReceiptOutline size={18} />
+                <span>Kasir POS</span>
+              </button>
+            )}
 
-            <button
-              className={`nav-btn ${activeTab === 'inventory' ? 'active' : ''}`}
-              onClick={() => setActiveTab('inventory')}
-            >
-              <IoCubeOutline size={18} />
-              <span>Stok & Gudang</span>
-            </button>
+            {/* 2. Stok & Gudang: Khusus OWNER & GUDANG (Kasir Dihide) */}
+            {(isSuperAdmin || isGudang) && (
+              <button
+                className={`nav-btn ${activeTab === 'inventory' ? 'active' : ''}`}
+                onClick={() => setActiveTab('inventory')}
+              >
+                <IoCubeOutline size={18} />
+                <span>Stok & Gudang</span>
+              </button>
+            )}
 
-            <button
-              className={`nav-btn ${activeTab === 'transactions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transactions')}
-            >
-              <IoTimeOutline size={18} />
-              <span>Riwayat Transaksi</span>
-            </button>
+            {/* 3. Riwayat Transaksi: Khusus OWNER & KASIR (Gudang Dihide) */}
+            {(isSuperAdmin || isKasir) && (
+              <button
+                className={`nav-btn ${activeTab === 'transactions' ? 'active' : ''}`}
+                onClick={() => setActiveTab('transactions')}
+              >
+                <IoTimeOutline size={18} />
+                <span>Riwayat Transaksi</span>
+              </button>
+            )}
 
+            {/* 4. Khusus OWNER (Super Admin): Akun & Profil Toko */}
             {isSuperAdmin && (
               <>
                 <button
@@ -82,8 +98,8 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
             {user ? (
               <div className="user-badge">
                 <span style={{ fontWeight: 700 }}>{user.name}</span>
-                <span className={`role-tag ${isSuperAdmin ? 'role-super' : 'role-cashier'}`}>
-                  {isSuperAdmin ? 'OWNER' : 'KASIR'}
+                <span className={`role-tag ${isSuperAdmin ? 'role-super' : isGudang ? 'role-gudang' : 'role-cashier'}`}>
+                  {isSuperAdmin ? 'OWNER' : isGudang ? 'GUDANG' : 'KASIR'}
                 </span>
                 <button
                   onClick={logout}
@@ -112,31 +128,37 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar for Smartphone Kasir */}
+      {/* Mobile Bottom Navigation Bar for Smartphone */}
       <div className="mobile-bottom-nav">
-        <button
-          className={`mobile-nav-item ${activeTab === 'pos' ? 'active' : ''}`}
-          onClick={() => setActiveTab('pos')}
-        >
-          <IoReceiptOutline size={20} />
-          <span>Kasir</span>
-        </button>
+        {(isSuperAdmin || isKasir) && (
+          <button
+            className={`mobile-nav-item ${activeTab === 'pos' ? 'active' : ''}`}
+            onClick={() => setActiveTab('pos')}
+          >
+            <IoReceiptOutline size={20} />
+            <span>Kasir</span>
+          </button>
+        )}
 
-        <button
-          className={`mobile-nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-          onClick={() => setActiveTab('inventory')}
-        >
-          <IoCubeOutline size={20} />
-          <span>Gudang</span>
-        </button>
+        {(isSuperAdmin || isGudang) && (
+          <button
+            className={`mobile-nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
+            onClick={() => setActiveTab('inventory')}
+          >
+            <IoCubeOutline size={20} />
+            <span>Gudang</span>
+          </button>
+        )}
 
-        <button
-          className={`mobile-nav-item ${activeTab === 'transactions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('transactions')}
-        >
-          <IoTimeOutline size={20} />
-          <span>Riwayat</span>
-        </button>
+        {(isSuperAdmin || isKasir) && (
+          <button
+            className={`mobile-nav-item ${activeTab === 'transactions' ? 'active' : ''}`}
+            onClick={() => setActiveTab('transactions')}
+          >
+            <IoTimeOutline size={20} />
+            <span>Riwayat</span>
+          </button>
+        )}
 
         {isSuperAdmin && (
           <button
@@ -144,7 +166,7 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
             onClick={() => setActiveTab('users')}
           >
             <IoPeopleOutline size={20} />
-            <span>Kasir</span>
+            <span>Akun</span>
           </button>
         )}
       </div>

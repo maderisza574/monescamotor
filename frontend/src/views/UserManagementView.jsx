@@ -147,9 +147,13 @@ export const UserManagementView = () => {
                     @{u.username}
                   </td>
                   <td style={{ padding: '0.85rem 1rem' }}>
-                    <span className={`role-tag ${u.role === 'SUPER_ADMIN' ? 'role-super' : 'role-cashier'}`}>
-                      {u.role === 'SUPER_ADMIN' ? 'SUPER ADMIN (OWNER)' : 'KASIR'}
-                    </span>
+                    {u.role === 'SUPER_ADMIN' ? (
+                      <span className="role-tag role-super">OWNER</span>
+                    ) : u.role === 'GUDANG' ? (
+                      <span className="role-tag role-gudang">STAF GUDANG</span>
+                    ) : (
+                      <span className="role-tag role-cashier">KASIR POS</span>
+                    )}
                   </td>
                   <td style={{ padding: '0.85rem 1rem' }}>
                     <span style={{
@@ -243,14 +247,15 @@ export const UserManagementView = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Peran (Role)</label>
+                <label className="form-label">Peran (Hak Akses) *</label>
                 <select
                   className="form-select"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                 >
-                  <option value="KASIR">Kasir (Hanya Akses POS & Transaksi)</option>
-                  <option value="SUPER_ADMIN">Super Admin (Owner Bengkel)</option>
+                  <option value="KASIR">Kasir POS (Hanya Akses Kasir & Cetak Struk - Stok Dihide)</option>
+                  <option value="GUDANG">Staf Gudang (Hanya Akses Stok & Tambah Barang - Kasir Dihide)</option>
+                  <option value="SUPER_ADMIN">Owner Bengkel (Akses Penuh Seluruh Sistem)</option>
                 </select>
               </div>
 

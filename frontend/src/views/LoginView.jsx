@@ -16,8 +16,8 @@ export const LoginView = ({ onLoginSuccess }) => {
     try {
       setLoading(true);
       setError(null);
-      await login(username, password);
-      onLoginSuccess();
+      const loggedInUser = await login(username, password);
+      onLoginSuccess(loggedInUser);
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.message || 'Username atau password salah.');

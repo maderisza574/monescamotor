@@ -30,11 +30,14 @@ module.exports = {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
+      const validRoles = ["SUPER_ADMIN", "KASIR", "GUDANG"];
+      const userRole = validRoles.includes(role?.toUpperCase()) ? role.toUpperCase() : "KASIR";
+
       const payload = {
         username: username.toLowerCase().trim(),
         password: hashedPassword,
         name: name.trim(),
-        role: role.toUpperCase() === "SUPER_ADMIN" ? "SUPER_ADMIN" : "KASIR",
+        role: userRole,
         is_active: true,
       };
 
@@ -53,7 +56,12 @@ module.exports = {
 
       const updatePayload = {};
       if (name !== undefined) updatePayload.name = name.trim();
-      if (role !== undefined) updatePayload.role = role.toUpperCase();
+      if (role !== undefined) {
+        const validRoles = ["SUPER_ADMIN", "KASIR", "GUDANG"];
+        if (validRoles.includes(role.toUpperCase())) {
+          updatePayload.role = role.toUpperCase();
+        }
+      }
       if (is_active !== undefined) updatePayload.is_active = Boolean(is_active);
 
       if (password) {

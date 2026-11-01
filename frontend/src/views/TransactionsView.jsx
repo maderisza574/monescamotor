@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/bluetoothPrinter';
 import { ThermalReceipt } from '../components/ThermalReceipt';
 import { 
@@ -31,6 +32,7 @@ const getLocalDateParts = (dateInput) => {
 };
 
 export const TransactionsView = () => {
+  const { isSuperAdmin } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTx, setSelectedTx] = useState(null);
@@ -142,145 +144,147 @@ export const TransactionsView = () => {
 
   return (
     <div>
-      {/* 3 KARTU RINGKASAN OMZET (Harian, Bulanan, Tahunan) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-        gap: '1rem',
-        marginBottom: '1.25rem'
-      }}>
-        {/* KARTU HARIAN */}
-        <div 
-          onClick={() => setPeriodFilter('today')}
-          style={{
-            background: periodFilter === 'today' 
-              ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(30, 41, 59, 0.9))' 
-              : 'var(--bg-card)',
-            border: periodFilter === 'today' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem 1.15rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            position: 'relative',
-            boxShadow: periodFilter === 'today' ? '0 4px 14px rgba(59, 130, 246, 0.3)' : 'none',
-          }}
-          title="Klik untuk filter transaksi Hari Ini"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Omzet Hari Ini
-            </span>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'rgba(59, 130, 246, 0.2)',
-              color: '#60a5fa',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.1rem'
-            }}>
-              <IoTodayOutline />
+      {/* 3 KARTU RINGKASAN OMZET (Harian, Bulanan, Tahunan) - KHUSUS OWNER */}
+      {isSuperAdmin && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.25rem'
+        }}>
+          {/* KARTU HARIAN */}
+          <div 
+            onClick={() => setPeriodFilter('today')}
+            style={{
+              background: periodFilter === 'today' 
+                ? 'linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(30, 41, 59, 0.9))' 
+                : 'var(--bg-card)',
+              border: periodFilter === 'today' ? '2px solid #3b82f6' : '1px solid var(--border-color)',
+              borderRadius: '12px',
+              padding: '1rem 1.15rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              position: 'relative',
+              boxShadow: periodFilter === 'today' ? '0 4px 14px rgba(59, 130, 246, 0.3)' : 'none',
+            }}
+            title="Klik untuk filter transaksi Hari Ini"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Omzet Hari Ini
+              </span>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(59, 130, 246, 0.2)',
+                color: '#60a5fa',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.1rem'
+              }}>
+                <IoTodayOutline />
+              </div>
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
+              {formatCurrency(todayOmzet)}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{currentParts.date} {MONTH_NAMES[currentParts.month]}</span>
+              <span style={{ color: '#93c5fd', fontWeight: 600 }}>{todayTx.length} Transaksi</span>
             </div>
           </div>
-          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-            {formatCurrency(todayOmzet)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{currentParts.date} {MONTH_NAMES[currentParts.month]}</span>
-            <span style={{ color: '#93c5fd', fontWeight: 600 }}>{todayTx.length} Transaksi</span>
-          </div>
-        </div>
 
-        {/* KARTU BULANAN */}
-        <div 
-          onClick={() => setPeriodFilter('month')}
-          style={{
-            background: periodFilter === 'month' 
-              ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(30, 41, 59, 0.9))' 
-              : 'var(--bg-card)',
-            border: periodFilter === 'month' ? '2px solid #10b981' : '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem 1.15rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            position: 'relative',
-            boxShadow: periodFilter === 'month' ? '0 4px 14px rgba(16, 185, 129, 0.3)' : 'none',
-          }}
-          title="Klik untuk filter transaksi Bulan Ini"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Omzet Bulan Ini
-            </span>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'rgba(16, 185, 129, 0.2)',
-              color: '#34d399',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.1rem'
-            }}>
-              <IoCalendarOutline />
+          {/* KARTU BULANAN */}
+          <div 
+            onClick={() => setPeriodFilter('month')}
+            style={{
+              background: periodFilter === 'month' 
+                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(30, 41, 59, 0.9))' 
+                : 'var(--bg-card)',
+              border: periodFilter === 'month' ? '2px solid #10b981' : '1px solid var(--border-color)',
+              borderRadius: '12px',
+              padding: '1rem 1.15rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              position: 'relative',
+              boxShadow: periodFilter === 'month' ? '0 4px 14px rgba(16, 185, 129, 0.3)' : 'none',
+            }}
+            title="Klik untuk filter transaksi Bulan Ini"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Omzet Bulan Ini
+              </span>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#34d399',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.1rem'
+              }}>
+                <IoCalendarOutline />
+              </div>
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
+              {formatCurrency(monthOmzet)}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{MONTH_NAMES[currentParts.month]} {currentParts.year}</span>
+              <span style={{ color: '#6ee7b7', fontWeight: 600 }}>{monthTx.length} Transaksi</span>
             </div>
           </div>
-          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-            {formatCurrency(monthOmzet)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{MONTH_NAMES[currentParts.month]} {currentParts.year}</span>
-            <span style={{ color: '#6ee7b7', fontWeight: 600 }}>{monthTx.length} Transaksi</span>
-          </div>
-        </div>
 
-        {/* KARTU TAHUNAN */}
-        <div 
-          onClick={() => setPeriodFilter('year')}
-          style={{
-            background: periodFilter === 'year' 
-              ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(30, 41, 59, 0.9))' 
-              : 'var(--bg-card)',
-            border: periodFilter === 'year' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '1rem 1.15rem',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            position: 'relative',
-            boxShadow: periodFilter === 'year' ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
-          }}
-          title="Klik untuk filter transaksi Tahun Ini"
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Omzet Tahun Ini
-            </span>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'rgba(139, 92, 246, 0.2)',
-              color: '#a78bfa',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.1rem'
-            }}>
-              <IoStatsChartOutline />
+          {/* KARTU TAHUNAN */}
+          <div 
+            onClick={() => setPeriodFilter('year')}
+            style={{
+              background: periodFilter === 'year' 
+                ? 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(30, 41, 59, 0.9))' 
+                : 'var(--bg-card)',
+              border: periodFilter === 'year' ? '2px solid #8b5cf6' : '1px solid var(--border-color)',
+              borderRadius: '12px',
+              padding: '1rem 1.15rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              position: 'relative',
+              boxShadow: periodFilter === 'year' ? '0 4px 14px rgba(139, 92, 246, 0.3)' : 'none',
+            }}
+            title="Klik untuk filter transaksi Tahun Ini"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Omzet Tahun Ini
+              </span>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'rgba(139, 92, 246, 0.2)',
+                color: '#a78bfa',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.1rem'
+              }}>
+                <IoStatsChartOutline />
+              </div>
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
+              {formatCurrency(yearOmzet)}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Tahun {currentParts.year}</span>
+              <span style={{ color: '#c4b5fd', fontWeight: 600 }}>{yearTx.length} Transaksi</span>
             </div>
           </div>
-          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
-            {formatCurrency(yearOmzet)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Tahun {currentParts.year}</span>
-            <span style={{ color: '#c4b5fd', fontWeight: 600 }}>{yearTx.length} Transaksi</span>
-          </div>
         </div>
-      </div>
+      )}
 
       {/* HEADER UTAMA & OMZET TERPILIH */}
       <div style={{
@@ -319,7 +323,7 @@ export const TransactionsView = () => {
           </div>
         </div>
 
-        {/* KOTAK TOTAL OMZET DINAMIS */}
+        {/* KOTAK TOTAL OMZET DINAMIS (Owner) / TOTAL TRANSAKSI (Kasir) */}
         <div style={{
           background: 'var(--bg-input)',
           border: '1px solid var(--border-color)',
@@ -329,13 +333,13 @@ export const TransactionsView = () => {
           minWidth: '220px'
         }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
-            OMZET: {getPeriodLabel().toUpperCase()}
+            {isSuperAdmin ? `OMZET: ${getPeriodLabel().toUpperCase()}` : 'STATUS TRANSAKSI'}
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-            {formatCurrency(currentPeriodOmzet)}
+            {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${periodFilteredTx.length} Transaksi`}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            {periodFilteredTx.length} transaksi berhasil
+            {isSuperAdmin ? `${periodFilteredTx.length} transaksi berhasil` : `Periode: ${getPeriodLabel()}`}
           </div>
         </div>
       </div>
