@@ -160,33 +160,92 @@ export const disconnectBluetooth = () => {
   cachedCharacteristic = null;
 };
 
+// Daftar UUID service printer thermal bluetooth paling umum di dunia (ESC/POS BLE)
+const KNOWN_SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // Thermal printer standard (0x18F0)
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // Generic Serial / VSC / Panda / Eppos (0xFFE0)
+  '0000ff00-0000-1000-8000-00805f9b34fb', // PT-210 / MPT-II / 58mm POS (0xFF00)
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent (Microchip)
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Android / Mobile POS
+  '0000af30-0000-1000-8000-00805f9b34fb', // Custom POS
+  '0000fff0-0000-1000-8000-00805f9b34fb', // 0xFFF0
+  '0000fee7-0000-1000-8000-00805f9b34fb', // Tencent / POS BLE
+];
+
 // Cari characteristic yang mendukung penulisan (write / writeWithoutResponse)
 const findWritableCharacteristic = async (server) => {
-  if (!server.connected) {
-    await server.connect();
-    await new Promise((r) => setTimeout(r, 150));
-  }
-
-  const services = await server.getPrimaryServices();
-  for (const s of services) {
+  // Coba cari service spesifik satu per satu terlebih dahulu (jauh lebih stabil daripada getPrimaryServices() massal)
+  for (const serviceUuid of KNOWN_SERVICES) {
     try {
-      const chars = await s.getCharacteristics();
+      const service = await server.getPrimaryService(serviceUuid);
+      const chars = await service.getCharacteristics();
       for (const c of chars) {
         if (c.properties.write || c.properties.writeWithoutResponse) {
           return c;
         }
       }
     } catch (e) {
-      // Abaikan service yang diproteksi dan lanjutkan
+      // Lanjut coba service berikutnya
     }
   }
+
+  // Fallback: cari ke seluruh primary services jika ada custom UUID lain
+  try {
+    const services = await server.getPrimaryServices();
+    for (const s of services) {
+      try {
+        const chars = await s.getCharacteristics();
+        for (const c of chars) {
+          if (c.properties.write || c.properties.writeWithoutResponse) {
+            return c;
+          }
+        }
+      } catch (e) {
+        // Lanjut
+      }
+    }
+  } catch (err) {
+    console.warn('Fallback getPrimaryServices error:', err);
+  }
+
   return null;
+};
+
+// Sambungkan ke GATT server dengan retry otomatis (hingga 3x)
+const connectGattWithRetry = async (device, maxRetries = 3) => {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (device.gatt.connected) {
+        return device.gatt;
+      }
+
+      const server = await device.gatt.connect();
+      // Jeda 250ms agar negosiasi GATT handshake stabil di OS
+      await new Promise((r) => setTimeout(r, 250));
+
+      if (server && server.connected) {
+        return server;
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(`GATT Connect attempt ${attempt}/${maxRetries} gagal:`, err);
+      // Tunggu 500ms sebelum mencoba menyambungkan kembali
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  throw new Error(
+    lastError?.message || 
+    'GATT Server terputus. Pastikan printer dalam keadaan ON dan jika ada pilihan nama berakhiran _BLE, pilih yang _BLE.'
+  );
 };
 
 // Ambil koneksi printer yang sudah ada atau hubungkan baru
 export const getOrConnectPrinter = async (forceSelect = false) => {
   if (!navigator.bluetooth) {
-    throw new Error('Browser ini belum mendukung Web Bluetooth. Silakan gunakan Google Chrome di Android / Windows / Mac.');
+    throw new Error('Browser ini belum mendukung Web Bluetooth. Silakan gunakan Google Chrome di Android / Windows / Mac, atau gunakan tombol Cetak Standar.');
   }
 
   // 1. Jika sudah terkoneksi dan tidak minta ganti device, pakai langsung (INSTAN tanpa popup!)
@@ -197,36 +256,30 @@ export const getOrConnectPrinter = async (forceSelect = false) => {
   // 2. Jika device sudah pernah dipilih tapi koneksi GATT tidur / terputus, coba reconnect langsung tanpa popup
   if (!forceSelect && cachedDevice && cachedDevice.gatt) {
     try {
-      let server;
-      if (!cachedDevice.gatt.connected) {
-        server = await cachedDevice.gatt.connect();
-        await new Promise((r) => setTimeout(r, 150));
-      } else {
-        server = cachedDevice.gatt;
-      }
-
+      const server = await connectGattWithRetry(cachedDevice, 2);
       const char = await findWritableCharacteristic(server);
       if (char) {
         cachedCharacteristic = char;
         return cachedCharacteristic;
       }
     } catch (reconnectErr) {
-      console.warn('Koneksi ulang ke printer lama gagal, membuka jendela pilihan printer...', reconnectErr);
+      console.warn('Auto-reconnect printer lama gagal, membuka jendela pilihan printer baru...', reconnectErr);
     }
   }
 
   // 3. Minta user memilih printer bluetooth (hanya saat pertama kali atau saat klik Ganti Printer)
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      '000018f0-0000-1000-8000-00805f9b34fb', // Thermal printer standard
-      '0000ffe0-0000-1000-8000-00805f9b34fb', // Generic Serial / POS
-      '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent
-      'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-      '0000ff00-0000-1000-8000-00805f9b34fb',
-      '0000af30-0000-1000-8000-00805f9b34fb',
-    ],
-  });
+  let device;
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: KNOWN_SERVICES,
+    });
+  } catch (userCancelErr) {
+    if (userCancelErr.name === 'NotFoundError') {
+      throw new Error('Pencarian printer dibatalkan.');
+    }
+    throw userCancelErr;
+  }
 
   cachedDevice = device;
 
@@ -236,19 +289,14 @@ export const getOrConnectPrinter = async (forceSelect = false) => {
     cachedCharacteristic = null;
   });
 
-  let server;
-  if (!device.gatt.connected) {
-    server = await device.gatt.connect();
-  } else {
-    server = device.gatt;
-  }
-
-  // Jeda 200ms untuk negosiasi GATT handshake agar stabil
-  await new Promise((r) => setTimeout(r, 200));
-
+  // Sambungkan dengan retry otomatis
+  const server = await connectGattWithRetry(device, 3);
   const char = await findWritableCharacteristic(server);
+
   if (!char) {
-    throw new Error('Tidak dapat menemukan jalur tulis pada printer bluetooth ini. Pastikan printer dalam keadaan ON.');
+    throw new Error(
+      `Tidak dapat menemukan jalur tulis pada printer "${device.name || 'Bluetooth'}".\nTips: Jika muncul 2 nama printer di daftar, pastikan pilih yang berakhiran "_BLE" (contoh: MPT-II_BLE atau RPP02N_BLE).`
+    );
   }
 
   cachedCharacteristic = char;
