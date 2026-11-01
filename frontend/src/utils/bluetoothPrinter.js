@@ -222,8 +222,8 @@ const connectGattWithRetry = async (device, maxRetries = 3) => {
       }
 
       const server = await device.gatt.connect();
-      // Jeda 250ms agar negosiasi GATT handshake stabil di OS
-      await new Promise((r) => setTimeout(r, 250));
+      // Jeda 300ms agar negosiasi GATT handshake stabil di OS
+      await new Promise((r) => setTimeout(r, 300));
 
       if (server && server.connected) {
         return server;
@@ -236,10 +236,23 @@ const connectGattWithRetry = async (device, maxRetries = 3) => {
     }
   }
 
-  throw new Error(
-    lastError?.message || 
-    'GATT Server terputus. Pastikan printer dalam keadaan ON dan jika ada pilihan nama berakhiran _BLE, pilih yang _BLE.'
-  );
+  // Jika printer langsung memutus koneksi GATT (ciri khas printer Bluetooth Classic / salah pilih nama tanpa _BLE)
+  const isGattDisconnect = !lastError || (lastError.message && (
+    lastError.message.includes('GATT') || 
+    lastError.message.includes('disconnected') || 
+    lastError.message.includes('NetworkError')
+  ));
+
+  if (isGattDisconnect) {
+    throw new Error(
+      `Printer "${device.name || 'Bluetooth'}" terputus dari GATT (Bluetooth Classic atau salah profil).\n\n` +
+      `Solusi:\n` +
+      `1. Jika di daftar printer muncul 2 nama (misal: ${device.name || 'Printer'} dan ${device.name || 'Printer'}_BLE), WAJIB pilih yang ada akhiran "_BLE".\n` +
+      `2. Jika printer Anda model Bluetooth Classic (bukan BLE), silakan gunakan tombol "Cetak Standar" di sebelah kanan.`
+    );
+  }
+
+  throw new Error(lastError?.message || 'Gagal menyambungkan ke printer bluetooth.');
 };
 
 // Ambil koneksi printer yang sudah ada atau hubungkan baru
@@ -322,9 +335,9 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
   const { includeLogo = true, forceSelect = false } = options;
   const storeName = (store?.store_name || 'MONESCA MOTOR').toUpperCase();
   const tagline = store?.tagline || 'Pusat Sparepart & Servis Motor';
-  const address = store?.address || 'Jl. Raya Bengkel';
+  const address = (store?.address || 'Jl. Raya Bengkel').replace(/\\n/g, '\n');
   const phone = store?.phone ? `Telp: ${store.phone}` : '';
-  const footer = store?.receipt_footer || 'Terima kasih atas kunjungan Anda!';
+  const footer = (store?.receipt_footer || 'Terima kasih atas kunjungan Anda!').replace(/\\n/g, '\n');
 
   // Ambil perintah raster gambar logo jika diaktifkan
   let logoBytes = new Uint8Array(0);

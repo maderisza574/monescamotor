@@ -939,8 +939,17 @@ input[type="number"] {
 .receipt-divider { border-top: 1px dashed #000; margin: 5px 0; }
 .receipt-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
 
-/* PRINT STYLES */
+/* PRINT STYLES - Dioptimalkan untuk Printer Thermal 58mm & A4 */
 @media print {
+  @page {
+    size: 58mm auto;
+    margin: 0;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
   body * {
     visibility: hidden;
   }
@@ -952,11 +961,13 @@ input[type="number"] {
     left: 0;
     top: 0;
     width: 58mm !important;
-    padding: 0 !important;
+    max-width: 58mm !important;
+    padding: 2mm 3mm !important;
     margin: 0 !important;
-    background: transparent !important;
+    background: #ffffff !important;
     color: #000000 !important;
     font-size: 11px !important;
+    font-family: 'Courier New', Courier, monospace !important;
   }
 }
 

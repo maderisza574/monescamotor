@@ -107,14 +107,39 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
         {errorMsg && (
           <div style={{
             background: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#f87171',
-            padding: '0.65rem 0.85rem',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            color: '#fca5a5',
+            padding: '0.75rem 0.85rem',
             borderRadius: '8px',
-            fontSize: '0.82rem',
-            marginBottom: '0.85rem'
+            fontSize: '0.8rem',
+            marginBottom: '0.85rem',
+            lineHeight: '1.45',
+            whiteSpace: 'pre-line'
           }}>
+            <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '4px' }}>
+              ⚠️ Kendala Koneksi Printer:
+            </div>
             {errorMsg}
+            <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid rgba(239, 68, 68, 0.25)' }}>
+              <button
+                onClick={handleStandardPrint}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.35rem'
+                }}
+              >
+                <IoPrintOutline size={16} /> Gunakan Cetak Standar (Bypass Bluetooth)
+              </button>
+            </div>
           </div>
         )}
 
@@ -217,7 +242,7 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
 
           <div className="receipt-divider"></div>
           <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px', whiteSpace: 'pre-line' }}>
-            {store?.receipt_footer || 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.'}
+            {(store?.receipt_footer || 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.').replace(/\\n/g, '\n')}
           </div>
         </div>
 
@@ -258,26 +283,30 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
             onClick={() => handlePrintBluetooth(false)}
             disabled={printingBt}
             style={{
-              padding: '0.75rem',
+              padding: '0.75rem 0.5rem',
               background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
               color: '#fff',
               borderRadius: '8px',
               fontWeight: 700,
               fontSize: '0.85rem',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
+              gap: '0.2rem',
             }}
           >
-            <IoBluetoothOutline size={18} />
-            {printingBt ? 'Mencetak...' : (connectedDeviceName ? 'Cetak (Instan)' : 'Bluetooth')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <IoBluetoothOutline size={18} />
+              <span>{printingBt ? 'Mencetak...' : (connectedDeviceName ? 'Cetak (Instan)' : 'Bluetooth')}</span>
+            </div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 400, opacity: 0.85 }}>HP Android / BLE</span>
           </button>
 
           <button
             onClick={handleStandardPrint}
             style={{
-              padding: '0.75rem',
+              padding: '0.75rem 0.5rem',
               background: '#1e293b',
               border: '1px solid #334155',
               color: '#f8fafc',
@@ -285,13 +314,17 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
               fontWeight: 700,
               fontSize: '0.85rem',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.4rem',
+              gap: '0.2rem',
             }}
           >
-            <IoPrintOutline size={18} />
-            Cetak Standar
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <IoPrintOutline size={18} />
+              <span>Cetak Standar</span>
+            </div>
+            <span style={{ fontSize: '0.68rem', fontWeight: 400, opacity: 0.75 }}>PC / Driver Printer</span>
           </button>
         </div>
       </div>
