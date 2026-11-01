@@ -34,13 +34,58 @@ const getLocalDateParts = (dateInput) => {
   };
 };
 
-export const TransactionsView = () => {
+export const TransactionsView = ({ onNavigateToPos }) => {
   const { isSuperAdmin } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTx, setSelectedTx] = useState(null);
   const [storeSettings, setStoreSettings] = useState(null);
   const [search, setSearch] = useState('');
+
+  // Mode Tampilan: 'completed' (Transaksi Selesai) atau 'drafts' (Draft Motor Ditinggal)
+  const [viewMode, setViewMode] = useState('completed');
+  const [drafts, setDrafts] = useState(() => {
+    try {
+      const s = localStorage.getItem('monesca_pos_drafts');
+      return s ? JSON.parse(s) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const loadDrafts = () => {
+    try {
+      const s = localStorage.getItem('monesca_pos_drafts');
+      setDrafts(s ? JSON.parse(s) : []);
+    } catch (e) {
+      setDrafts([]);
+    }
+  };
+
+  const handleOpenDraftInPos = (draft) => {
+    try {
+      localStorage.setItem('monesca_active_draft_to_load', JSON.stringify(draft));
+    } catch (e) {
+      console.error(e);
+    }
+    if (onNavigateToPos) {
+      onNavigateToPos();
+    } else {
+      window.dispatchEvent(new CustomEvent('monesca_load_draft', { detail: draft }));
+    }
+  };
+
+  const handleDeleteDraft = (draftId) => {
+    if (window.confirm('Hapus antrean draft motor ini?')) {
+      const remaining = drafts.filter(d => d.draft_id !== draftId);
+      setDrafts(remaining);
+      try {
+        localStorage.setItem('monesca_pos_drafts', JSON.stringify(remaining));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
 
   const now = new Date();
   const currentParts = getLocalDateParts(now);
@@ -395,19 +440,93 @@ export const TransactionsView = () => {
         </div>
       </div>
 
-      {/* FILTER BAR PERIODE & PENCARIAN */}
+      {/* TAB SWITCHER: TRANSAKSI SELESAI vs DRAFT MOTOR DITINGGAL */}
       <div style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '12px',
-        padding: '0.85rem 1rem',
-        marginBottom: '1.25rem',
         display: 'flex',
-        flexWrap: 'wrap',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '0.85rem',
+        gap: '0.65rem',
+        marginBottom: '1rem',
+        flexWrap: 'wrap'
       }}>
+        <button
+          type="button"
+          onClick={() => setViewMode('completed')}
+          style={{
+            padding: '0.55rem 1.15rem',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: viewMode === 'completed' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'var(--bg-card)',
+            color: viewMode === 'completed' ? '#fff' : 'var(--text-muted)',
+            border: viewMode === 'completed' ? '1px solid #3b82f6' : '1px solid var(--border-color)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+          }}
+        >
+          <IoReceiptOutline size={17} />
+          <span>Riwayat Transaksi Selesai</span>
+          <span style={{
+            background: viewMode === 'completed' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+            padding: '1px 6px',
+            borderRadius: '99px',
+            fontSize: '0.72rem',
+          }}>
+            {transactions.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            loadDrafts();
+            setViewMode('drafts');
+          }}
+          style={{
+            padding: '0.55rem 1.15rem',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: viewMode === 'drafts' ? 'linear-gradient(135deg, #d97706, #b45309)' : 'var(--bg-card)',
+            color: viewMode === 'drafts' ? '#fff' : drafts.length > 0 ? '#fbbf24' : 'var(--text-muted)',
+            border: viewMode === 'drafts' ? '1px solid #f59e0b' : drafts.length > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+          }}
+        >
+          <IoTimeOutline size={17} />
+          <span>Draft / Motor Ditinggal</span>
+          <span style={{
+            background: viewMode === 'drafts' ? 'rgba(255, 255, 255, 0.25)' : drafts.length > 0 ? '#f59e0b' : 'rgba(255, 255, 255, 0.08)',
+            color: viewMode === 'drafts' ? '#fff' : drafts.length > 0 ? '#000' : 'inherit',
+            padding: '1px 6px',
+            borderRadius: '99px',
+            fontSize: '0.72rem',
+            fontWeight: 800,
+          }}>
+            {drafts.length}
+          </span>
+        </button>
+      </div>
+
+      {viewMode === 'completed' ? (
+        <>
+          {/* FILTER BAR PERIODE & PENCARIAN */}
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '0.85rem 1rem',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.85rem',
+          }}>
         {/* TOMBOL-TOMBOL FILTER CEPAT */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '4px', marginRight: '4px' }}>
@@ -763,6 +882,175 @@ export const TransactionsView = () => {
           </tbody>
         </table>
       </div>
+    </>
+  ) : (
+    /* TABEL DAFTAR DRAFT MOTOR DITINGGAL */
+    <div style={{
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '12px',
+      overflowX: 'auto',
+    }}>
+      <div style={{
+        padding: '0.85rem 1.15rem',
+        borderBottom: '1px solid var(--border-color)',
+        background: 'rgba(245, 158, 11, 0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+      }}>
+        <div style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: 600 }}>
+          🛵 Daftar antrean motor yang sedang ditinggal / diservis. Anda dapat membuka dan melengkapi item di Kasir saat motor selesai.
+        </div>
+        <button
+          onClick={loadDrafts}
+          style={{
+            padding: '4px 10px',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-muted)',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          <IoRefreshOutline /> Refresh Antrean
+        </button>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)' }}>
+            <th style={{ padding: '0.85rem 1rem' }}>No. Draft</th>
+            <th style={{ padding: '0.85rem 1rem' }}>Waktu Masuk</th>
+            <th style={{ padding: '0.85rem 1rem' }}>Pelanggan / Motor</th>
+            <th style={{ padding: '0.85rem 1rem' }}>Rincian Part & Servis</th>
+            <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
+            <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Estimasi Biaya</th>
+            <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {drafts.length === 0 ? (
+            <tr>
+              <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🛵</div>
+                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem', color: 'var(--text-main)' }}>
+                  Tidak ada antrean motor yang sedang ditinggal saat ini
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                  Jika ada motor ditinggal, kasir dapat menyimpannya melalui tombol "Simpan sebagai Draft" di Kasir POS.
+                </div>
+              </td>
+            </tr>
+          ) : (
+            drafts.map((d) => (
+              <tr key={d.draft_id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', transition: 'background 0.15s' }}>
+                <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#fbbf24' }}>
+                  {d.draft_id}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                  {new Date(d.created_at).toLocaleString('id-ID', {
+                    day: 'numeric',
+                    month: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </td>
+                <td style={{ padding: '0.85rem 1rem' }}>
+                  <div style={{ fontWeight: 600 }}>{d.customer_name || 'Pelanggan Umum'}</div>
+                  {(d.vehicle_plate || d.vehicle_model) && (
+                    <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 700 }}>
+                      {d.vehicle_plate ? `[${d.vehicle_plate.toUpperCase()}]` : ''} {d.vehicle_model || ''}
+                    </div>
+                  )}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-main)', maxWidth: '280px' }}>
+                  {d.items && d.items.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {d.items.map((it, idx) => (
+                        <div key={idx} style={{ color: it.is_manual ? '#fbbf24' : it.is_service ? '#c084fc' : 'inherit' }}>
+                          • {it.quantity}x {it.product_name}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ color: 'var(--text-dim)' }}>Belum ada part</span>
+                  )}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                  <span style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(245, 158, 11, 0.3)'
+                  }}>
+                    MOTOR DITINGGAL
+                  </span>
+                </td>
+                <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#38bdf8' }}>
+                  {formatCurrency(d.total_amount)}
+                </td>
+                <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      onClick={() => handleOpenDraftInPos(d)}
+                      style={{
+                        padding: '0.45rem 0.85rem',
+                        background: '#2563eb',
+                        border: 'none',
+                        color: '#fff',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)'
+                      }}
+                      title="Buka kembali antrean ini di kasir untuk melengkapi dan melakukan cetak struk"
+                    >
+                      ✏️ Buka & Lengkapi di Kasir
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteDraft(d.draft_id)}
+                      style={{
+                        padding: '0.45rem 0.6rem',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#f87171',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}
+                      title="Hapus antrean draft ini"
+                    >
+                      <IoTrashOutline size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )}
 
       {/* MODAL CETAK ULANG STRUK THERMAL */}
       {selectedTx && (

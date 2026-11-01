@@ -70,7 +70,7 @@ const MainApp = () => {
         ) : activeTab === 'inventory' && (isSuperAdmin || isGudang) ? (
           <InventoryView />
         ) : activeTab === 'transactions' && (isSuperAdmin || isKasir) ? (
-          <TransactionsView />
+          <TransactionsView onNavigateToPos={() => setActiveTab('pos')} />
         ) : activeTab === 'users' && isSuperAdmin ? (
           <UserManagementView />
         ) : activeTab === 'settings' && isSuperAdmin ? (

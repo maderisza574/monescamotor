@@ -85,6 +85,29 @@ export const PosView = () => {
   useEffect(() => {
     fetchBrands();
     fetchStoreSettings();
+
+    // Periksa apakah ada draft yang diminta untuk dibuka dari halaman Riwayat Transaksi
+    try {
+      const pendingDraftJson = localStorage.getItem('monesca_active_draft_to_load');
+      if (pendingDraftJson) {
+        const d = JSON.parse(pendingDraftJson);
+        localStorage.removeItem('monesca_active_draft_to_load');
+        setTimeout(() => handleLoadDraft(d), 100);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    const handleCustomLoadDraft = (e) => {
+      if (e.detail) {
+        handleLoadDraft(e.detail);
+      }
+    };
+
+    window.addEventListener('monesca_load_draft', handleCustomLoadDraft);
+    return () => {
+      window.removeEventListener('monesca_load_draft', handleCustomLoadDraft);
+    };
   }, []);
 
   useEffect(() => {
@@ -234,7 +257,7 @@ export const PosView = () => {
     setShowManualModal(false);
   };
 
-  const handleSaveDraft = (printTicket = true) => {
+  const handleSaveDraft = () => {
     if (cart.length === 0) {
       alert('Keranjang masih kosong. Tambahkan sparepart atau jasa terlebih dahulu.');
       return;
@@ -268,10 +291,7 @@ export const PosView = () => {
 
     saveDraftsToStorage(updatedDrafts);
 
-    if (printTicket) {
-      setCompletedTransaction(draftData);
-    }
-
+    // JANGAN LAKUKAN PRINT! (Draft masuk ke riwayat antrean tanpa popup cetak)
     // Reset keranjang untuk melayani konsumen lain
     setCart([]);
     setVehiclePlate('');
@@ -282,6 +302,8 @@ export const PosView = () => {
     setNotes('');
     setActiveDraftId(null);
     setMobileTab('catalog');
+
+    alert(`✓ Motor ${draftData.vehicle_plate || 'Tanpa Plat'} berhasil disimpan sebagai draft ke riwayat antrean. Anda dapat melengkapinya nanti sebelum mencetak struk!`);
   };
 
   const handleLoadDraft = (draft) => {
@@ -731,11 +753,11 @@ export const PosView = () => {
             </div>
           )}
 
-          {/* Tombol Simpan Draft & Cetak Tanda Terima Motor Ditinggal */}
+          {/* Tombol Simpan Draft Motor Ditinggal (Tanpa Cetak) */}
           <div style={{ marginTop: '0.75rem' }}>
             <button
               type="button"
-              onClick={() => handleSaveDraft(true)}
+              onClick={handleSaveDraft}
               disabled={processingOrder}
               style={{
                 width: '100%',
@@ -752,10 +774,10 @@ export const PosView = () => {
                 gap: '0.45rem',
                 cursor: 'pointer',
               }}
-              title="Simpan sementara untuk motor yang ditinggal dan cetak struk tanda terima servis"
+              title="Simpan motor yang ditinggal ke riwayat antrean tanpa mencetak"
             >
-              <IoDocumentTextOutline size={17} />
-              <span>Simpan Draft & Cetak Tanda Terima</span>
+              <IoTimeOutline size={17} />
+              <span>Simpan sebagai Draft (Motor Ditinggal)</span>
             </button>
           </div>
 
@@ -884,7 +906,7 @@ export const PosView = () => {
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button
                   type="button"
-                  onClick={() => handleSaveDraft(true)}
+                  onClick={handleSaveDraft}
                   style={{
                     background: '#ca8a04',
                     color: '#fff',
@@ -898,8 +920,9 @@ export const PosView = () => {
                     alignItems: 'center',
                     gap: '3px'
                   }}
+                  title="Simpan pembaruan draft tanpa mencetak"
                 >
-                  <IoSaveOutline /> Simpan & Cetak Ulang
+                  <IoSaveOutline /> Simpan Update Draft
                 </button>
                 <button
                   type="button"
@@ -1296,42 +1319,22 @@ export const PosView = () => {
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setCompletedTransaction(draft);
-                          }}
-                          style={{
-                            background: 'rgba(56, 189, 248, 0.15)',
-                            color: '#38bdf8',
-                            border: '1px solid rgba(56, 189, 248, 0.3)',
-                            borderRadius: '5px',
-                            padding: '4px 8px',
-                            fontSize: '0.74rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '3px'
-                          }}
-                          title="Cetak struk tanda terima servis"
-                        >
-                          <IoReceiptOutline /> Cetak Tanda Terima
-                        </button>
-
-                        <button
-                          type="button"
                           onClick={() => handleLoadDraft(draft)}
                           style={{
                             background: '#2563eb',
                             color: '#fff',
                             border: 'none',
                             borderRadius: '5px',
-                            padding: '4px 10px',
-                            fontSize: '0.74rem',
+                            padding: '5px 12px',
+                            fontSize: '0.78rem',
                             fontWeight: 700,
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
                           }}
                         >
-                          Buka & Bayar
+                          ✏️ Buka & Lengkapi / Bayar
                         </button>
 
                         <button
