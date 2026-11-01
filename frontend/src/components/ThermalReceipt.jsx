@@ -1,0 +1,225 @@
+import React, { useState } from 'react';
+import { printViaWebBluetooth, formatCurrency, formatNumber } from '../utils/bluetoothPrinter';
+import { IoBluetoothOutline, IoPrintOutline, IoCloseCircleOutline, IoCheckmarkCircleOutline } from 'react-icons/io5';
+
+export const ThermalReceipt = ({ transaction, store, onClose }) => {
+  const [printingBt, setPrintingBt] = useState(false);
+  const [btStatus, setBtStatus] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  if (!transaction) return null;
+
+  const handlePrintBluetooth = async () => {
+    try {
+      setPrintingBt(true);
+      setErrorMsg(null);
+      setBtStatus('Mencari & menghubungkan printer bluetooth...');
+      await printViaWebBluetooth(transaction, store, { includeLogo: true });
+      setBtStatus('Struk berhasil dicetak ke printer bluetooth!');
+      setTimeout(() => setBtStatus(null), 4000);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || 'Gagal mencetak via Bluetooth. Pastikan bluetooth aktif atau gunakan tombol Cetak Sistem.');
+    } finally {
+      setPrintingBt(false);
+    }
+  };
+
+  const handleStandardPrint = () => {
+    window.print();
+  };
+
+  const items = transaction.items || [];
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content" style={{ maxWidth: '420px', padding: '1.25rem' }}>
+        <div className="modal-header" style={{ marginBottom: '0.85rem' }}>
+          <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <IoPrintOutline color="#38bdf8" /> Struk Pembayaran
+          </h3>
+          <button className="modal-close-btn" onClick={onClose}>
+            <IoCloseCircleOutline size={24} />
+          </button>
+        </div>
+
+        {btStatus && (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.15)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            color: '#34d399',
+            padding: '0.65rem 0.85rem',
+            borderRadius: '8px',
+            fontSize: '0.82rem',
+            marginBottom: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem'
+          }}>
+            <IoCheckmarkCircleOutline size={18} /> {btStatus}
+          </div>
+        )}
+
+        {errorMsg && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            color: '#f87171',
+            padding: '0.65rem 0.85rem',
+            borderRadius: '8px',
+            fontSize: '0.82rem',
+            marginBottom: '0.85rem'
+          }}>
+            {errorMsg}
+          </div>
+        )}
+
+        {/* PREVIEW STRUK 58mm */}
+        <div className="thermal-receipt-preview printable-receipt" id="printable-receipt">
+          <div className="receipt-center" style={{ marginBottom: '8px' }}>
+            <img 
+              src="/logo-thermal.png" 
+              alt="Monesca Motor" 
+              style={{ 
+                maxWidth: '190px', 
+                width: '85%', 
+                height: 'auto', 
+                display: 'block', 
+                margin: '0 auto 4px auto' 
+              }} 
+            />
+          </div>
+          <div className="receipt-center" style={{ fontSize: '11px', color: '#555' }}>
+            {store?.tagline || 'Pusat Sparepart & Servis Motor'}
+          </div>
+          <div className="receipt-center" style={{ fontSize: '10px', color: '#555' }}>
+            {store?.address || 'Jl. Raya Motor No. 123'}
+          </div>
+          {store?.phone && (
+            <div className="receipt-center" style={{ fontSize: '10px', color: '#555' }}>
+              Telp: {store.phone}
+            </div>
+          )}
+
+          <div className="receipt-divider"></div>
+
+          <div className="receipt-row">
+            <span>No: {transaction.invoice_number}</span>
+          </div>
+          <div className="receipt-row">
+            <span>Tgl: {new Date(transaction.created_at || Date.now()).toLocaleDateString('id-ID')}</span>
+            <span>{new Date(transaction.created_at || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          <div className="receipt-row">
+            <span>Kasir: {transaction.cashier_name || 'Kasir'}</span>
+          </div>
+          {transaction.vehicle_plate && (
+            <div className="receipt-row receipt-bold">
+              <span>Plat Motor: {transaction.vehicle_plate.toUpperCase()}</span>
+            </div>
+          )}
+          {transaction.vehicle_model && (
+            <div className="receipt-row">
+              <span>Motor: {transaction.vehicle_model}</span>
+            </div>
+          )}
+          {transaction.customer_name && transaction.customer_name !== 'Pelanggan Umum' && (
+            <div className="receipt-row">
+              <span>Pelanggan: {transaction.customer_name}</span>
+            </div>
+          )}
+
+          <div className="receipt-divider"></div>
+
+          {/* ITEM LIST */}
+          {items.map((it, idx) => (
+            <div key={idx} style={{ marginBottom: '4px' }}>
+              <div className="receipt-bold" style={{ fontSize: '11px' }}>
+                {it.is_service ? `[JASA] ${it.product_name}` : it.product_name}
+              </div>
+              <div className="receipt-row" style={{ fontSize: '11px' }}>
+                <span>  {it.quantity} x {formatNumber(it.unit_price)}</span>
+                <span>{formatNumber(it.subtotal)}</span>
+              </div>
+            </div>
+          ))}
+
+          <div className="receipt-divider"></div>
+
+          <div className="receipt-row">
+            <span>Subtotal</span>
+            <span>{formatNumber(transaction.subtotal)}</span>
+          </div>
+          {Number(transaction.discount) > 0 && (
+            <div className="receipt-row">
+              <span>Diskon</span>
+              <span>-{formatNumber(transaction.discount)}</span>
+            </div>
+          )}
+          <div className="receipt-row receipt-bold" style={{ fontSize: '13px', margin: '4px 0' }}>
+            <span>TOTAL</span>
+            <span>{formatCurrency(transaction.total_amount)}</span>
+          </div>
+          <div className="receipt-row">
+            <span>Bayar ({transaction.payment_method})</span>
+            <span>{formatNumber(transaction.cash_given || transaction.total_amount)}</span>
+          </div>
+          {Number(transaction.change_due) > 0 && (
+            <div className="receipt-row">
+              <span>Kembalian</span>
+              <span>{formatNumber(transaction.change_due)}</span>
+            </div>
+          )}
+
+          <div className="receipt-divider"></div>
+          <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px' }}>
+            {store?.receipt_footer || 'Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.'}
+          </div>
+        </div>
+
+        {/* TOMBOL AKSI CETAK */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+          <button
+            onClick={handlePrintBluetooth}
+            disabled={printingBt}
+            style={{
+              padding: '0.75rem',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              color: '#fff',
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <IoBluetoothOutline size={18} />
+            {printingBt ? 'Mencetak...' : 'Bluetooth'}
+          </button>
+
+          <button
+            onClick={handleStandardPrint}
+            style={{
+              padding: '0.75rem',
+              background: '#1e293b',
+              border: '1px solid #334155',
+              color: '#f8fafc',
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <IoPrintOutline size={18} />
+            Cetak Standar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
