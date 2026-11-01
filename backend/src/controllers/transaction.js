@@ -81,11 +81,11 @@ module.exports = {
 
   getAllTransactions: async (request, response) => {
     try {
-      let { page = 1, limit = 50 } = request.query;
+      let { page = 1, limit = 100, startDate, endDate } = request.query;
       page = Math.max(1, parseInt(page, 10) || 1);
-      limit = Math.max(1, parseInt(limit, 10) || 50);
+      limit = Math.min(1000, Math.max(1, parseInt(limit, 10) || 100));
 
-      const totalData = await transactionModel.getCountTransactions();
+      const totalData = await transactionModel.getCountTransactions(startDate, endDate);
       const totalPage = Math.ceil(totalData / limit);
       const offset = (page - 1) * limit;
 
@@ -96,7 +96,7 @@ module.exports = {
         totalData,
       };
 
-      const result = await transactionModel.getAllTransactions(offset, limit);
+      const result = await transactionModel.getAllTransactions(offset, limit, startDate, endDate);
       return wrapper.response(
         response,
         200,

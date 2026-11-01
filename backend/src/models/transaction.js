@@ -85,15 +85,24 @@ module.exports = {
     return fullTrx;
   },
 
-  getAllTransactions: (offset = 0, limit = 50) =>
+  getAllTransactions: (offset = 0, limit = 100, startDate = null, endDate = null) =>
     new Promise((resolve, reject) => {
-      supabase
+      let query = supabase
         .from("transactions")
         .select(`
           *,
           items:transaction_items (*)
         `)
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (startDate) {
+        query = query.gte("created_at", startDate);
+      }
+      if (endDate) {
+        query = query.lte("created_at", endDate);
+      }
+
+      query
         .range(offset, offset + limit - 1)
         .then((result) => {
           if (!result.error) {
@@ -123,17 +132,25 @@ module.exports = {
         });
     }),
 
-  getCountTransactions: () =>
+  getCountTransactions: (startDate = null, endDate = null) =>
     new Promise((resolve, reject) => {
-      supabase
+      let query = supabase
         .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .then((result) => {
-          if (!result.error) {
-            resolve(result.count || 0);
-          } else {
-            reject(result);
-          }
-        });
+        .select("*", { count: "exact", head: true });
+
+      if (startDate) {
+        query = query.gte("created_at", startDate);
+      }
+      if (endDate) {
+        query = query.lte("created_at", endDate);
+      }
+
+      query.then((result) => {
+        if (!result.error) {
+          resolve(result.count || 0);
+        } else {
+          reject(result);
+        }
+      });
     }),
 };
