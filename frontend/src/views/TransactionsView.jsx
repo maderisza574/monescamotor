@@ -9,13 +9,14 @@ import {
   IoSearchOutline, 
   IoCalendarOutline, 
   IoTodayOutline, 
-  IoStatsChartOutline,
-  IoFilterOutline,
-  IoRefreshOutline,
-  IoWalletOutline,
-  IoTrashOutline,
-  IoTrashBinOutline,
-  IoAlertCircleOutline
+  IoStatsChartOutline, 
+  IoFilterOutline, 
+  IoRefreshOutline, 
+  IoWalletOutline, 
+  IoTrashOutline, 
+  IoTrashBinOutline, 
+  IoAlertCircleOutline,
+  IoTimeOutline
 } from 'react-icons/io5';
 
 const MONTH_NAMES = [
@@ -24,7 +25,17 @@ const MONTH_NAMES = [
 ];
 
 const getLocalDateParts = (dateInput) => {
-  const d = new Date(dateInput);
+  const d = dateInput ? new Date(dateInput) : new Date();
+  if (isNaN(d.getTime())) {
+    const fallback = new Date();
+    return {
+      year: fallback.getFullYear(),
+      month: fallback.getMonth(),
+      date: fallback.getDate(),
+      dateString: `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}-${String(fallback.getDate()).padStart(2, '0')}`,
+      monthString: `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}`,
+    };
+  }
   return {
     year: d.getFullYear(),
     month: d.getMonth(),
@@ -32,6 +43,19 @@ const getLocalDateParts = (dateInput) => {
     dateString: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
     monthString: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
   };
+};
+
+const formatTxDate = (dateVal) => {
+  if (!dateVal) return '-';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
 
 export const TransactionsView = ({ onNavigateToPos }) => {
@@ -42,12 +66,13 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   const [storeSettings, setStoreSettings] = useState(null);
   const [search, setSearch] = useState('');
 
-  // Mode Tampilan: 'completed' (Transaksi Selesai) atau 'drafts' (Draft Motor Ditinggal)
-  const [viewMode, setViewMode] = useState('completed');
+  // Antrean Draft Motor Ditinggal (dari localStorage)
   const [drafts, setDrafts] = useState(() => {
     try {
       const s = localStorage.getItem('monesca_pos_drafts');
-      return s ? JSON.parse(s) : [];
+      if (!s) return [];
+      const parsed = JSON.parse(s);
+      return Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
     } catch (e) {
       return [];
     }
@@ -56,41 +81,21 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   const loadDrafts = () => {
     try {
       const s = localStorage.getItem('monesca_pos_drafts');
-      setDrafts(s ? JSON.parse(s) : []);
+      if (!s) {
+        setDrafts([]);
+        return;
+      }
+      const parsed = JSON.parse(s);
+      setDrafts(Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []));
     } catch (e) {
       setDrafts([]);
-    }
-  };
-
-  const handleOpenDraftInPos = (draft) => {
-    try {
-      localStorage.setItem('monesca_active_draft_to_load', JSON.stringify(draft));
-    } catch (e) {
-      console.error(e);
-    }
-    if (onNavigateToPos) {
-      onNavigateToPos();
-    } else {
-      window.dispatchEvent(new CustomEvent('monesca_load_draft', { detail: draft }));
-    }
-  };
-
-  const handleDeleteDraft = (draftId) => {
-    if (window.confirm('Hapus antrean draft motor ini?')) {
-      const remaining = drafts.filter(d => d.draft_id !== draftId);
-      setDrafts(remaining);
-      try {
-        localStorage.setItem('monesca_pos_drafts', JSON.stringify(remaining));
-      } catch (e) {
-        console.error(e);
-      }
     }
   };
 
   const now = new Date();
   const currentParts = getLocalDateParts(now);
 
-  // Filter periode: 'all', 'today', 'month', 'year', 'custom_date', 'custom_month'
+  // Filter periode: 'all', 'drafts', 'today', 'month', 'year', 'custom_date', 'custom_month'
   const [periodFilter, setPeriodFilter] = useState('all');
   const [customDate, setCustomDate] = useState(currentParts.dateString);
   const [customMonth, setCustomMonth] = useState(currentParts.monthString);
@@ -104,6 +109,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   useEffect(() => {
     fetchTransactions();
     fetchStoreSettings();
+    loadDrafts();
   }, []);
 
   const fetchStoreSettings = async () => {
@@ -120,6 +126,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
       setLoading(true);
       const res = await api.get('/transactions?limit=500');
       setTransactions(res.data?.data || []);
+      loadDrafts();
     } catch (err) {
       console.error(err);
     } finally {
@@ -127,7 +134,34 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     }
   };
 
-  // Hapus satu transaksi (Khusus Owner)
+  // Buka draft kembali ke kasir POS untuk dilengkapi & dicetak lunas
+  const handleOpenDraftInPos = (draft) => {
+    try {
+      localStorage.setItem('monesca_active_draft_to_load', JSON.stringify(draft));
+    } catch (e) {
+      console.error(e);
+    }
+    if (onNavigateToPos) {
+      onNavigateToPos();
+    } else {
+      window.dispatchEvent(new CustomEvent('monesca_load_draft', { detail: draft }));
+    }
+  };
+
+  // Hapus satu antrean draft
+  const handleDeleteDraft = (draftId) => {
+    if (window.confirm('Hapus antrean draft motor ini?')) {
+      const remaining = drafts.filter((d) => (d.draft_id || d.id) !== draftId);
+      setDrafts(remaining);
+      try {
+        localStorage.setItem('monesca_pos_drafts', JSON.stringify(remaining));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  // Hapus satu transaksi selesai (Khusus Owner)
   const handleDeleteTx = async (tx) => {
     if (!window.confirm(`Yakin ingin menghapus transaksi "${tx.invoice_number}" sebesar ${formatCurrency(tx.total_amount)}?\n\nStok barang yang pernah terjual pada transaksi ini akan otomatis dikembalikan ke gudang.`)) {
       return;
@@ -169,27 +203,66 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     }
   };
 
-  // Ringkasan Cepat Omzet (Hari Ini, Bulan Ini, Tahun Ini)
-  const todayTx = transactions.filter((t) => {
+  // HANYA transaksi selesai (bukan draft) yang dihitung ke omzet keuangan riil
+  const completedTransactions = transactions.filter((t) => !t.is_draft && t.status !== 'DRAFT');
+
+  const todayTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month && p.date === currentParts.date;
   });
   const todayOmzet = todayTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
 
-  const monthTx = transactions.filter((t) => {
+  const monthTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month;
   });
   const monthOmzet = monthTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
 
-  const yearTx = transactions.filter((t) => {
+  const yearTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year;
   });
   const yearOmzet = yearTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
 
-  // Filter berdasarkan Periode yang dipilih
-  const periodFilteredTx = transactions.filter((t) => {
+  // Normalisasi Draft Antrean Motor Ditinggal
+  const safeDrafts = (Array.isArray(drafts) ? drafts : []).map((d) => ({
+    id: d.draft_id || d.id || ('DRAFT-' + Math.random().toString(36).slice(2, 6)),
+    invoice_number: d.draft_id || d.invoice_number || 'DRAFT',
+    created_at: d.created_at || new Date().toISOString(),
+    cashier_name: d.cashier_name || 'Kasir',
+    customer_name: d.customer_name || 'Pelanggan Umum',
+    vehicle_plate: d.vehicle_plate || null,
+    vehicle_model: d.vehicle_model || null,
+    payment_method: 'DRAFT',
+    total_amount: Number(d.total_amount || d.subtotal || 0),
+    status: 'DRAFT',
+    is_draft: true,
+    items: Array.isArray(d.items) ? d.items : [],
+    rawDraft: d,
+  }));
+
+  // Normalisasi Transaksi Selesai
+  const safeTransactions = (Array.isArray(transactions) ? transactions : []).map((t) => ({
+    ...t,
+    status: t.status || 'COMPLETED',
+    is_draft: false,
+  }));
+
+  // Gabungkan seluruh data: Draft motor ditinggal + Transaksi selesai
+  const combinedList = [...safeDrafts, ...safeTransactions].sort((a, b) => {
+    // Jika draft, utamakan di atas agar kasir langsung melihat motor yang sedang diservis
+    if (a.is_draft && !b.is_draft) return -1;
+    if (!a.is_draft && b.is_draft) return 1;
+    const timeA = new Date(a.created_at).getTime() || 0;
+    const timeB = new Date(b.created_at).getTime() || 0;
+    return timeB - timeA;
+  });
+
+  // Filter berdasarkan Periode / Mode
+  const periodFilteredTx = combinedList.filter((t) => {
+    if (periodFilter === 'drafts') {
+      return Boolean(t.is_draft);
+    }
     const p = getLocalDateParts(t.created_at);
     if (periodFilter === 'today') {
       return p.year === currentParts.year && p.month === currentParts.month && p.date === currentParts.date;
@@ -206,10 +279,10 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     if (periodFilter === 'custom_month') {
       return p.monthString === customMonth;
     }
-    return true; // 'all'
+    return true; // 'all' (semua transaksi selesai + draft)
   });
 
-  // Filter lanjutan berdasarkan Pencarian Teks
+  // Filter pencarian teks
   const finalFilteredTx = periodFilteredTx.filter((t) => {
     if (!search.trim()) return true;
     const query = search.toLowerCase();
@@ -221,9 +294,13 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     );
   });
 
-  const currentPeriodOmzet = periodFilteredTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+  // Omzet terpilih (hanya transaksi selesai)
+  const currentPeriodOmzet = periodFilteredTx
+    .filter((t) => !t.is_draft)
+    .reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
 
   const getPeriodLabel = () => {
+    if (periodFilter === 'drafts') return `Khusus Draft Antrean Motor (${safeDrafts.length})`;
     if (periodFilter === 'today') return `Hari Ini (${currentParts.date} ${MONTH_NAMES[currentParts.month]} ${currentParts.year})`;
     if (periodFilter === 'month') return `Bulan Ini (${MONTH_NAMES[currentParts.month]} ${currentParts.year})`;
     if (periodFilter === 'year') return `Tahun Ini (${currentParts.year})`;
@@ -235,7 +312,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
       const [y, m] = customMonth.split('-');
       return `Bulan ${MONTH_NAMES[Number(m) - 1]} ${y}`;
     }
-    return 'Semua Waktu';
+    return 'Semua Data & Draft';
   };
 
   return (
@@ -411,10 +488,11 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </div>
           <div>
             <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              Riwayat Transaksi Penjualan
+              Riwayat Transaksi & Antrean
             </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Menampilkan {finalFilteredTx.length} dari {transactions.length} transaksi ({getPeriodLabel()})
+              Menampilkan {finalFilteredTx.length} catatan ({getPeriodLabel()})
+              {safeDrafts.length > 0 && <span style={{ color: '#fbbf24', marginLeft: '6px', fontWeight: 700 }}>• {safeDrafts.length} motor dalam pengerjaan (Draft)</span>}
             </p>
           </div>
         </div>
@@ -429,104 +507,30 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           minWidth: '220px'
         }}>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
-            {isSuperAdmin ? `OMZET: ${getPeriodLabel().toUpperCase()}` : 'STATUS TRANSAKSI'}
+            {isSuperAdmin ? `OMZET LUNAS: ${getPeriodLabel().toUpperCase()}` : 'STATUS DATA'}
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-            {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${periodFilteredTx.length} Transaksi`}
+            {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${completedTransactions.length} Transaksi Lunas`}
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            {isSuperAdmin ? `${periodFilteredTx.length} transaksi berhasil` : `Periode: ${getPeriodLabel()}`}
+            {safeDrafts.length > 0 ? `${safeDrafts.length} antrean draft motor aktif` : 'Semua transaksi selesai'}
           </div>
         </div>
       </div>
 
-      {/* TAB SWITCHER: TRANSAKSI SELESAI vs DRAFT MOTOR DITINGGAL */}
+      {/* FILTER BAR PERIODE, DRAFT & PENCARIAN */}
       <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '12px',
+        padding: '0.85rem 1rem',
+        marginBottom: '1.25rem',
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        gap: '0.65rem',
-        marginBottom: '1rem',
-        flexWrap: 'wrap'
+        justifyContent: 'space-between',
+        gap: '0.85rem',
       }}>
-        <button
-          type="button"
-          onClick={() => setViewMode('completed')}
-          style={{
-            padding: '0.55rem 1.15rem',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: viewMode === 'completed' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : 'var(--bg-card)',
-            color: viewMode === 'completed' ? '#fff' : 'var(--text-muted)',
-            border: viewMode === 'completed' ? '1px solid #3b82f6' : '1px solid var(--border-color)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-          }}
-        >
-          <IoReceiptOutline size={17} />
-          <span>Riwayat Transaksi Selesai</span>
-          <span style={{
-            background: viewMode === 'completed' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.08)',
-            padding: '1px 6px',
-            borderRadius: '99px',
-            fontSize: '0.72rem',
-          }}>
-            {transactions.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            loadDrafts();
-            setViewMode('drafts');
-          }}
-          style={{
-            padding: '0.55rem 1.15rem',
-            borderRadius: '8px',
-            fontSize: '0.85rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: viewMode === 'drafts' ? 'linear-gradient(135deg, #d97706, #b45309)' : 'var(--bg-card)',
-            color: viewMode === 'drafts' ? '#fff' : drafts.length > 0 ? '#fbbf24' : 'var(--text-muted)',
-            border: viewMode === 'drafts' ? '1px solid #f59e0b' : drafts.length > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-          }}
-        >
-          <IoTimeOutline size={17} />
-          <span>Draft / Motor Ditinggal</span>
-          <span style={{
-            background: viewMode === 'drafts' ? 'rgba(255, 255, 255, 0.25)' : drafts.length > 0 ? '#f59e0b' : 'rgba(255, 255, 255, 0.08)',
-            color: viewMode === 'drafts' ? '#fff' : drafts.length > 0 ? '#000' : 'inherit',
-            padding: '1px 6px',
-            borderRadius: '99px',
-            fontSize: '0.72rem',
-            fontWeight: 800,
-          }}>
-            {drafts.length}
-          </span>
-        </button>
-      </div>
-
-      {viewMode === 'completed' ? (
-        <>
-          {/* FILTER BAR PERIODE & PENCARIAN */}
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '0.85rem 1rem',
-            marginBottom: '1.25rem',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.85rem',
-          }}>
         {/* TOMBOL-TOMBOL FILTER CEPAT */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '4px', marginRight: '4px' }}>
@@ -534,6 +538,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </span>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('all')}
             style={{
               padding: '6px 12px',
@@ -547,10 +552,34 @@ export const TransactionsView = ({ onNavigateToPos }) => {
               transition: 'all 0.15s'
             }}
           >
-            Semua
+            Semua ({combinedList.length})
+          </button>
+
+          {/* TOMBOL FILTER KHUSUS DRAFT MOTOR DITINGGAL */}
+          <button
+            type="button"
+            onClick={() => setPeriodFilter('drafts')}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: periodFilter === 'drafts' ? '#f59e0b' : safeDrafts.length > 0 ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-input)',
+              color: periodFilter === 'drafts' ? '#000' : safeDrafts.length > 0 ? '#fbbf24' : 'var(--text-muted)',
+              border: periodFilter === 'drafts' ? '1px solid #f59e0b' : safeDrafts.length > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s'
+            }}
+          >
+            <IoTimeOutline size={15} />
+            <span>Draft Motor ({safeDrafts.length})</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('today')}
             style={{
               padding: '6px 12px',
@@ -568,6 +597,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </button>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('month')}
             style={{
               padding: '6px 12px',
@@ -585,6 +615,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </button>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('year')}
             style={{
               padding: '6px 12px',
@@ -602,6 +633,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </button>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('custom_date')}
             style={{
               padding: '6px 12px',
@@ -619,6 +651,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </button>
 
           <button
+            type="button"
             onClick={() => setPeriodFilter('custom_month')}
             style={{
               padding: '6px 12px',
@@ -635,7 +668,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             Pilih Bulan
           </button>
 
-          {/* DATE PICKER (Jika pilih tanggal) */}
+          {/* DATE PICKER */}
           {periodFilter === 'custom_date' && (
             <input
               type="date"
@@ -653,7 +686,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             />
           )}
 
-          {/* MONTH PICKER (Jika pilih bulan) */}
+          {/* MONTH PICKER */}
           {periodFilter === 'custom_month' && (
             <input
               type="month"
@@ -673,8 +706,9 @@ export const TransactionsView = ({ onNavigateToPos }) => {
 
           {/* REFRESH DATA */}
           <button
+            type="button"
             onClick={fetchTransactions}
-            title="Muat ulang data transaksi"
+            title="Muat ulang data transaksi dan draft"
             style={{
               padding: '6px',
               borderRadius: '6px',
@@ -683,7 +717,8 @@ export const TransactionsView = ({ onNavigateToPos }) => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              marginLeft: '4px'
+              marginLeft: '4px',
+              cursor: 'pointer'
             }}
           >
             <IoRefreshOutline size={16} />
@@ -692,52 +727,44 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           {/* RESET OMZET (KHUSUS OWNER) */}
           {isSuperAdmin && (
             <button
+              type="button"
               onClick={() => setShowResetModal(true)}
               style={{
                 padding: '6px 12px',
                 borderRadius: '6px',
                 fontSize: '0.78rem',
                 fontWeight: 700,
+                cursor: 'pointer',
                 background: 'rgba(239, 68, 68, 0.15)',
                 color: '#f87171',
                 border: '1px solid rgba(239, 68, 68, 0.35)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '4px',
-                cursor: 'pointer',
-                marginLeft: '6px'
+                marginLeft: 'auto'
               }}
-              title="Hapus seluruh riwayat transaksi & reset omzet ke Rp 0 (Khusus Owner)"
+              title="Khusus Owner: Hapus seluruh riwayat dan reset total omzet ke Rp 0"
             >
-              <IoTrashBinOutline size={15} />
-              <span>Reset Omzet</span>
+              <IoTrashBinOutline size={15} /> Reset Omzet
             </button>
           )}
         </div>
 
-        {/* INPUT PENCARIAN TEKS */}
-        <div style={{ position: 'relative', minWidth: '280px', flex: '1', maxWidth: '400px' }}>
-          <IoSearchOutline style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+        {/* SEARCH BOX */}
+        <div style={{ position: 'relative', minWidth: '260px', flex: '1', maxWidth: '340px' }}>
+          <IoSearchOutline style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '1rem' }} />
           <input
             type="text"
-            placeholder="Cari no faktur, pelanggan, plat motor..."
-            style={{
-              width: '100%',
-              padding: '0.55rem 0.85rem 0.55rem 2.1rem',
-              background: 'var(--bg-input)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              color: 'var(--text-main)',
-              fontSize: '0.82rem',
-              outline: 'none',
-            }}
+            className="form-input"
+            placeholder="Cari no faktur, draft, plat motor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            style={{ paddingLeft: '32px', fontSize: '0.82rem', width: '100%' }}
           />
         </div>
       </div>
 
-      {/* TABEL RIWAYAT TRANSAKSI */}
+      {/* TABEL TERPADU TRANSAKSI & DRAFT MOTOR */}
       <div style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border-color)',
@@ -747,11 +774,11 @@ export const TransactionsView = ({ onNavigateToPos }) => {
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)' }}>
-              <th style={{ padding: '0.85rem 1rem' }}>No. Faktur</th>
+              <th style={{ padding: '0.85rem 1rem' }}>No. Faktur / Draft</th>
               <th style={{ padding: '0.85rem 1rem' }}>Waktu</th>
               <th style={{ padding: '0.85rem 1rem' }}>Kasir</th>
               <th style={{ padding: '0.85rem 1rem' }}>Pelanggan / Motor</th>
-              <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Metode</th>
+              <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status / Metode</th>
               <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Total Bayar</th>
               <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Aksi</th>
             </tr>
@@ -768,13 +795,14 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                 <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.5 }}>📂</div>
                   <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem', color: 'var(--text-main)' }}>
-                    Tidak ada transaksi ditemukan
+                    Tidak ada catatan ditemukan
                   </div>
                   <div style={{ fontSize: '0.8rem', marginBottom: '1rem' }}>
-                    {search ? `Tidak ada transaksi yang cocok dengan kata kunci "${search}"` : `Belum ada transaksi pada periode ${getPeriodLabel()}`}
+                    {search ? `Tidak ada catatan yang cocok dengan kata kunci "${search}"` : `Belum ada data pada filter ${getPeriodLabel()}`}
                   </div>
                   {periodFilter !== 'all' && (
                     <button
+                      type="button"
                       onClick={() => { setPeriodFilter('all'); setSearch(''); }}
                       style={{
                         padding: '6px 14px',
@@ -782,275 +810,182 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                         color: '#fff',
                         borderRadius: '6px',
                         fontSize: '0.8rem',
-                        fontWeight: 600
+                        fontWeight: 600,
+                        cursor: 'pointer'
                       }}
                     >
-                      Lihat Semua Transaksi
+                      Lihat Semua Catatan
                     </button>
                   )}
                 </td>
               </tr>
             ) : (
-              finalFilteredTx.map((tx) => (
-                <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', transition: 'background 0.15s' }}>
-                  <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>
-                    {tx.invoice_number}
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                    {new Date(tx.created_at).toLocaleString('id-ID', {
-                      day: 'numeric',
-                      month: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem' }}>
-                    {tx.cashier_name || 'Kasir'}
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem' }}>
-                    <div style={{ fontWeight: 600 }}>{tx.customer_name}</div>
-                    {(tx.vehicle_plate || tx.vehicle_model) && (
-                      <div style={{ fontSize: '0.75rem', color: '#38bdf8' }}>
-                        {tx.vehicle_plate ? `[${tx.vehicle_plate.toUpperCase()}]` : ''} {tx.vehicle_model || ''}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      background: tx.payment_method === 'QRIS' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.08)',
-                      color: tx.payment_method === 'QRIS' ? '#c084fc' : 'inherit',
-                      border: tx.payment_method === 'QRIS' ? '1px solid rgba(168, 85, 247, 0.3)' : 'none'
-                    }}>
-                      {tx.payment_method}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#34d399' }}>
-                    {formatCurrency(tx.total_amount)}
-                  </td>
-                  <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <button
-                        onClick={() => setSelectedTx(tx)}
-                        style={{
-                          padding: '0.4rem 0.75rem',
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          border: '1px solid rgba(59, 130, 246, 0.3)',
-                          color: '#60a5fa',
-                          borderRadius: '6px',
-                          fontSize: '0.78rem',
-                          fontWeight: 700,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <IoPrintOutline /> Cetak Struk
-                      </button>
-
-                      {isSuperAdmin && (
-                        <button
-                          onClick={() => handleDeleteTx(tx)}
-                          style={{
-                            padding: '0.4rem 0.6rem',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#f87171',
-                            borderRadius: '6px',
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer'
-                          }}
-                          title="Hapus transaksi ini (Khusus Owner)"
-                        >
-                          <IoTrashOutline size={16} />
-                        </button>
+              finalFilteredTx.map((tx) => {
+                const isDraft = Boolean(tx.is_draft || tx.status === 'DRAFT');
+                return (
+                  <tr 
+                    key={tx.id || tx.invoice_number} 
+                    style={{ 
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)', 
+                      background: isDraft ? 'rgba(245, 158, 11, 0.04)' : 'transparent',
+                      transition: 'background 0.15s' 
+                    }}
+                  >
+                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: isDraft ? '#fbbf24' : '#60a5fa' }}>
+                      {tx.invoice_number}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                      {formatTxDate(tx.created_at)}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem' }}>
+                      {tx.cashier_name || 'Kasir'}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem' }}>
+                      <div style={{ fontWeight: 600 }}>{tx.customer_name || 'Pelanggan Umum'}</div>
+                      {(tx.vehicle_plate || tx.vehicle_model) && (
+                        <div style={{ fontSize: '0.75rem', color: isDraft ? '#fbbf24' : '#38bdf8', fontWeight: isDraft ? 700 : 400 }}>
+                          {tx.vehicle_plate ? `[${tx.vehicle_plate.toUpperCase()}]` : ''} {tx.vehicle_model || ''}
+                        </div>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                      {isDraft && tx.items && tx.items.length > 0 && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                          {tx.items.map((it) => `${it.quantity}x ${it.product_name}`).join(', ')}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                      {isDraft ? (
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          color: '#fbbf24',
+                          border: '1px solid rgba(245, 158, 11, 0.4)'
+                        }}>
+                          🛵 DRAFT (MOTOR DITINGGAL)
+                        </span>
+                      ) : (
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          background: tx.payment_method === 'QRIS' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                          color: tx.payment_method === 'QRIS' ? '#c084fc' : 'inherit',
+                          border: tx.payment_method === 'QRIS' ? '1px solid rgba(168, 85, 247, 0.3)' : 'none'
+                        }}>
+                          {tx.payment_method || 'CASH'}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: isDraft ? '#38bdf8' : '#34d399' }}>
+                      {formatCurrency(tx.total_amount)}
+                      {isDraft && <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>Estimasi</span>}
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        {isDraft ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDraftInPos(tx.rawDraft || tx)}
+                              style={{
+                                padding: '0.45rem 0.85rem',
+                                background: '#2563eb',
+                                border: 'none',
+                                color: '#fff',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)'
+                              }}
+                              title="Buka kembali antrean ini di kasir untuk melengkapi dan melakukan cetak struk"
+                            >
+                              ✏️ Buka & Lengkapi di Kasir
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDraft(tx.id || tx.invoice_number)}
+                              style={{
+                                padding: '0.45rem 0.6rem',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#f87171',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                              title="Hapus antrean draft ini"
+                            >
+                              <IoTrashOutline size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTx(tx)}
+                              style={{
+                                padding: '0.4rem 0.75rem',
+                                background: 'rgba(59, 130, 246, 0.15)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                color: '#60a5fa',
+                                borderRadius: '6px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <IoPrintOutline /> Cetak Struk
+                            </button>
+
+                            {isSuperAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTx(tx)}
+                                style={{
+                                  padding: '0.4rem 0.6rem',
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  color: '#f87171',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer'
+                                }}
+                                title="Hapus transaksi ini (Khusus Owner)"
+                              >
+                                <IoTrashOutline size={16} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
-    </>
-  ) : (
-    /* TABEL DAFTAR DRAFT MOTOR DITINGGAL */
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border-color)',
-      borderRadius: '12px',
-      overflowX: 'auto',
-    }}>
-      <div style={{
-        padding: '0.85rem 1.15rem',
-        borderBottom: '1px solid var(--border-color)',
-        background: 'rgba(245, 158, 11, 0.08)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '0.5rem',
-      }}>
-        <div style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: 600 }}>
-          🛵 Daftar antrean motor yang sedang ditinggal / diservis. Anda dapat membuka dan melengkapi item di Kasir saat motor selesai.
-        </div>
-        <button
-          onClick={loadDrafts}
-          style={{
-            padding: '4px 10px',
-            background: 'var(--bg-input)',
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-muted)',
-            borderRadius: '6px',
-            fontSize: '0.75rem',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          <IoRefreshOutline /> Refresh Antrean
-        </button>
-      </div>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)' }}>
-            <th style={{ padding: '0.85rem 1rem' }}>No. Draft</th>
-            <th style={{ padding: '0.85rem 1rem' }}>Waktu Masuk</th>
-            <th style={{ padding: '0.85rem 1rem' }}>Pelanggan / Motor</th>
-            <th style={{ padding: '0.85rem 1rem' }}>Rincian Part & Servis</th>
-            <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status</th>
-            <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Estimasi Biaya</th>
-            <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Aksi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {drafts.length === 0 ? (
-            <tr>
-              <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🛵</div>
-                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem', color: 'var(--text-main)' }}>
-                  Tidak ada antrean motor yang sedang ditinggal saat ini
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-                  Jika ada motor ditinggal, kasir dapat menyimpannya melalui tombol "Simpan sebagai Draft" di Kasir POS.
-                </div>
-              </td>
-            </tr>
-          ) : (
-            drafts.map((d) => (
-              <tr key={d.draft_id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', transition: 'background 0.15s' }}>
-                <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#fbbf24' }}>
-                  {d.draft_id}
-                </td>
-                <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                  {new Date(d.created_at).toLocaleString('id-ID', {
-                    day: 'numeric',
-                    month: 'numeric',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </td>
-                <td style={{ padding: '0.85rem 1rem' }}>
-                  <div style={{ fontWeight: 600 }}>{d.customer_name || 'Pelanggan Umum'}</div>
-                  {(d.vehicle_plate || d.vehicle_model) && (
-                    <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 700 }}>
-                      {d.vehicle_plate ? `[${d.vehicle_plate.toUpperCase()}]` : ''} {d.vehicle_model || ''}
-                    </div>
-                  )}
-                </td>
-                <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem', color: 'var(--text-main)', maxWidth: '280px' }}>
-                  {d.items && d.items.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      {d.items.map((it, idx) => (
-                        <div key={idx} style={{ color: it.is_manual ? '#fbbf24' : it.is_service ? '#c084fc' : 'inherit' }}>
-                          • {it.quantity}x {it.product_name}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span style={{ color: 'var(--text-dim)' }}>Belum ada part</span>
-                  )}
-                </td>
-                <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
-                  <span style={{
-                    padding: '3px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    color: '#fbbf24',
-                    border: '1px solid rgba(245, 158, 11, 0.3)'
-                  }}>
-                    MOTOR DITINGGAL
-                  </span>
-                </td>
-                <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#38bdf8' }}>
-                  {formatCurrency(d.total_amount)}
-                </td>
-                <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <button
-                      onClick={() => handleOpenDraftInPos(d)}
-                      style={{
-                        padding: '0.45rem 0.85rem',
-                        background: '#2563eb',
-                        border: 'none',
-                        color: '#fff',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)'
-                      }}
-                      title="Buka kembali antrean ini di kasir untuk melengkapi dan melakukan cetak struk"
-                    >
-                      ✏️ Buka & Lengkapi di Kasir
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteDraft(d.draft_id)}
-                      style={{
-                        padding: '0.45rem 0.6rem',
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: '#f87171',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer'
-                      }}
-                      title="Hapus antrean draft ini"
-                    >
-                      <IoTrashOutline size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  )}
 
       {/* MODAL CETAK ULANG STRUK THERMAL */}
       {selectedTx && (
@@ -1117,31 +1052,34 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '1.25rem' }}>
                   <button
                     type="button"
-                    onClick={() => { setShowResetModal(false); setResetConfirmText(''); }}
-                    style={{
-                      padding: '0.75rem',
-                      background: 'transparent',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-muted)',
-                      borderRadius: '8px',
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowResetModal(false);
+                      setResetConfirmText('');
                     }}
+                    disabled={actionLoading}
                   >
                     Batal
                   </button>
+
                   <button
                     type="submit"
-                    disabled={actionLoading || resetConfirmText.trim().toUpperCase() !== 'RESET'}
                     style={{
-                      padding: '0.75rem',
-                      background: resetConfirmText.trim().toUpperCase() === 'RESET' ? '#ef4444' : '#64748b',
+                      background: '#ef4444',
                       color: '#fff',
-                      borderRadius: '8px',
-                      fontWeight: 700,
-                      cursor: resetConfirmText.trim().toUpperCase() === 'RESET' ? 'pointer' : 'not-allowed',
                       border: 'none',
+                      borderRadius: 'var(--radius-sm)',
+                      fontWeight: 700,
+                      padding: '0.65rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
                     }}
+                    disabled={actionLoading}
                   >
-                    {actionLoading ? 'Mereset...' : 'Ya, Reset Semua'}
+                    {actionLoading ? 'Mereset...' : 'Ya, Reset Sekarang'}
                   </button>
                 </div>
               </form>
