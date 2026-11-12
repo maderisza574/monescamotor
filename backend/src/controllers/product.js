@@ -129,6 +129,7 @@ module.exports = {
         motor_compatibility,
         cost_price,
         selling_price,
+        stock,
         min_stock,
         rack_location,
         unit,
@@ -150,6 +151,37 @@ module.exports = {
       if (image_url !== undefined) updatePayload.image_url = image_url;
       if (is_active !== undefined) updatePayload.is_active = is_active;
 
+      // Fitur Edit Jumlah Stok Fisik Gudang (KHUSUS ADMIN / SUPER_ADMIN)
+      if (stock !== undefined && stock !== null && stock !== "") {
+        if (!request.user || request.user.role !== "SUPER_ADMIN") {
+          return wrapper.response(
+            response,
+            403,
+            "Akses ditolak: Hanya Admin / Owner yang diizinkan mengedit jumlah stok gudang"
+          );
+        }
+
+        const targetStock = Math.max(0, parseInt(stock, 10) || 0);
+        const currentProdRes = await productModel.getProductById(id);
+        const currentProd = currentProdRes?.data;
+        const prevStock = currentProd ? (currentProd.stock || 0) : 0;
+
+        if (targetStock !== prevStock) {
+          updatePayload.stock = targetStock;
+
+          // Catat ke riwayat mutasi stok (Audit Log)
+          const diff = targetStock - prevStock;
+          await stockMovementModel.createMovement({
+            product_id: id,
+            type: "ADJUSTMENT",
+            quantity: diff,
+            previous_stock: prevStock,
+            current_stock: targetStock,
+            notes: `Koreksi stok langsung oleh Admin (${prevStock} -> ${targetStock})`,
+          });
+        }
+      }
+
       const result = await productModel.updateProduct(id, updatePayload);
       return wrapper.response(response, 200, "Berhasil memperbarui data sparepart", result.data[0]);
     } catch (error) {
@@ -163,21 +195,43 @@ module.exports = {
       const { id } = request.params;
       const { type = "IN", quantity, notes } = request.body;
 
-      if (!quantity || Number(quantity) === 0) {
-        return wrapper.response(response, 400, "Jumlah mutasi stok harus lebih dari 0");
+      if (quantity === undefined || quantity === null || Number(quantity) < 0) {
+        return wrapper.response(response, 400, "Jumlah mutasi stok harus angka 0 atau lebih");
+      }
+
+      // Khusus tipe "SET" (mengatur ulang jumlah stok total secara langsung), hanya Admin yang diizinkan
+      if (type === "SET") {
+        if (!request.user || request.user.role !== "SUPER_ADMIN") {
+          return wrapper.response(
+            response,
+            403,
+            "Akses ditolak: Hanya Admin / Owner yang diizinkan mengatur ulang jumlah stok secara langsung"
+          );
+        }
       }
 
       const productRes = await productModel.getProductById(id);
       const currentProduct = productRes.data;
+      if (!currentProduct) {
+        return wrapper.response(response, 404, "Sparepart tidak ditemukan");
+      }
 
       const prevStock = currentProduct.stock || 0;
       let newStock = prevStock;
-      const qtyNumber = Math.abs(Number(quantity));
+      const qtyNumber = Number(quantity);
+      let movementType = type;
+      let movementQty = 0;
 
       if (type === "IN") {
-        newStock = prevStock + qtyNumber;
-      } else if (type === "OUT" || type === "ADJUSTMENT") {
-        newStock = Math.max(0, prevStock - qtyNumber);
+        newStock = prevStock + Math.abs(qtyNumber);
+        movementQty = Math.abs(qtyNumber);
+      } else if (type === "OUT") {
+        newStock = Math.max(0, prevStock - Math.abs(qtyNumber));
+        movementQty = -Math.abs(qtyNumber);
+      } else if (type === "SET" || type === "ADJUSTMENT") {
+        newStock = Math.max(0, qtyNumber);
+        movementQty = newStock - prevStock;
+        movementType = "ADJUSTMENT";
       }
 
       // Update stok di produk
@@ -186,11 +240,11 @@ module.exports = {
       // Catat mutasi stok
       const movement = await stockMovementModel.createMovement({
         product_id: id,
-        type,
-        quantity: type === "IN" ? qtyNumber : -qtyNumber,
+        type: movementType,
+        quantity: movementQty,
         previous_stock: prevStock,
         current_stock: newStock,
-        notes: notes || `Penyesuaian stok manual (${type})`,
+        notes: notes || (type === "SET" ? `Koreksi stok langsung oleh Admin (${prevStock} -> ${newStock})` : `Penyesuaian stok manual (${type})`),
       });
 
       return wrapper.response(response, 200, "Stok berhasil diperbarui", {

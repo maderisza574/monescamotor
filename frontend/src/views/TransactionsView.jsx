@@ -16,7 +16,10 @@ import {
   IoTrashOutline, 
   IoTrashBinOutline, 
   IoAlertCircleOutline,
-  IoTimeOutline
+  IoTimeOutline,
+  IoConstructOutline,
+  IoCubeOutline,
+  IoCashOutline
 } from 'react-icons/io5';
 
 const MONTH_NAMES = [
@@ -210,23 +213,85 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   // HANYA transaksi selesai (bukan draft) yang dihitung ke omzet keuangan riil
   const completedTransactions = transactions.filter((t) => !t.is_draft && t.status !== 'DRAFT');
 
+  // Kalkulasi Keuntungan (Laba Bersih): Dipisahkan menjadi Keuntungan Jasa dan Keuntungan Sparepart
+  const computeProfitStats = (txList) => {
+    let profitJasa = 0;
+    let profitSparepart = 0;
+    let omzet = 0;
+    let totalDiskon = 0;
+
+    (txList || []).forEach((tx) => {
+      if (tx.is_draft || tx.status === 'DRAFT') return;
+      omzet += Number(tx.total_amount || 0);
+      totalDiskon += Number(tx.discount || 0);
+
+      const items = Array.isArray(tx.items) ? tx.items : [];
+      items.forEach((item) => {
+        const itemSubtotal = Number(item.subtotal) || (Number(item.unit_price || 0) * Number(item.quantity || 1));
+        const itemCost = (Number(item.cost_price) || 0) * Number(item.quantity || 1);
+        const itemProfit = itemSubtotal - itemCost;
+
+        if (item.is_service) {
+          profitJasa += itemProfit;
+        } else {
+          profitSparepart += itemProfit;
+        }
+      });
+    });
+
+    const totalProfit = Math.max(0, profitJasa + profitSparepart - totalDiskon);
+
+    return {
+      omzet,
+      profitJasa,
+      profitSparepart,
+      totalDiskon,
+      totalProfit,
+    };
+  };
+
+  const getTxProfit = (tx) => {
+    if (tx.is_draft || tx.status === 'DRAFT') {
+      return { profitJasa: 0, profitSparepart: 0, totalProfit: 0 };
+    }
+    let profitJasa = 0;
+    let profitSparepart = 0;
+    const items = Array.isArray(tx.items) ? tx.items : [];
+    items.forEach((item) => {
+      const itemSubtotal = Number(item.subtotal) || (Number(item.unit_price || 0) * Number(item.quantity || 1));
+      const itemCost = (Number(item.cost_price) || 0) * Number(item.quantity || 1);
+      const itemProfit = itemSubtotal - itemCost;
+
+      if (item.is_service) {
+        profitJasa += itemProfit;
+      } else {
+        profitSparepart += itemProfit;
+      }
+    });
+    const totalProfit = Math.max(0, profitJasa + profitSparepart - Number(tx.discount || 0));
+    return { profitJasa, profitSparepart, totalProfit };
+  };
+
   const todayTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month && p.date === currentParts.date;
   });
-  const todayOmzet = todayTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+  const todayStats = computeProfitStats(todayTx);
+  const todayOmzet = todayStats.omzet;
 
   const monthTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month;
   });
-  const monthOmzet = monthTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+  const monthStats = computeProfitStats(monthTx);
+  const monthOmzet = monthStats.omzet;
 
   const yearTx = completedTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year;
   });
-  const yearOmzet = yearTx.reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+  const yearStats = computeProfitStats(yearTx);
+  const yearOmzet = yearStats.omzet;
 
   // Normalisasi Draft Antrean Motor Ditinggal
   const safeDrafts = (Array.isArray(drafts) ? drafts : []).map((d) => ({
@@ -298,10 +363,9 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     );
   });
 
-  // Omzet terpilih (hanya transaksi selesai)
-  const currentPeriodOmzet = periodFilteredTx
-    .filter((t) => !t.is_draft)
-    .reduce((sum, t) => sum + Number(t.total_amount || 0), 0);
+  // Statistik Omzet & Laba Terpilih (hanya transaksi selesai)
+  const currentPeriodStats = computeProfitStats(periodFilteredTx);
+  const currentPeriodOmzet = currentPeriodStats.omzet;
 
   const getPeriodLabel = () => {
     if (periodFilter === 'drafts') return `Khusus Draft Antrean Motor (${safeDrafts.length})`;
@@ -321,11 +385,11 @@ export const TransactionsView = ({ onNavigateToPos }) => {
 
   return (
     <div>
-      {/* 3 KARTU RINGKASAN OMZET (Harian, Bulanan, Tahunan) - KHUSUS OWNER */}
+      {/* 3 KARTU RINGKASAN OMZET & LABA BERSIH (Harian, Bulanan, Tahunan) - KHUSUS OWNER */}
       {isSuperAdmin && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
           gap: '1rem',
           marginBottom: '1.25rem'
         }}>
@@ -346,7 +410,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             }}
             title="Klik untuk filter transaksi Hari Ini"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
               <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Omzet Hari Ini
               </span>
@@ -367,9 +431,32 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
               {formatCurrency(todayOmzet)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span>{currentParts.date} {MONTH_NAMES[currentParts.month]}</span>
               <span style={{ color: '#93c5fd', fontWeight: 600 }}>{todayTx.length} Transaksi</span>
+            </div>
+
+            {/* Pemisahan Keuntungan Jasa vs Sparepart Hari Ini */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              paddingTop: '6px',
+              borderTop: '1px dashed rgba(255, 255, 255, 0.1)',
+              fontSize: '0.72rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fde047', fontWeight: 700 }}>
+                <span>Total Laba:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(todayStats.totalProfit)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c084fc' }}>
+                <span>🔧 Keuntungan Jasa:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(todayStats.profitJasa)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8' }}>
+                <span>📦 Keuntungan Part:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(todayStats.profitSparepart)}</span>
+              </div>
             </div>
           </div>
 
@@ -390,7 +477,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             }}
             title="Klik untuk filter transaksi Bulan Ini"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
               <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Omzet Bulan Ini
               </span>
@@ -411,9 +498,32 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
               {formatCurrency(monthOmzet)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span>{MONTH_NAMES[currentParts.month]} {currentParts.year}</span>
               <span style={{ color: '#6ee7b7', fontWeight: 600 }}>{monthTx.length} Transaksi</span>
+            </div>
+
+            {/* Pemisahan Keuntungan Jasa vs Sparepart Bulan Ini */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              paddingTop: '6px',
+              borderTop: '1px dashed rgba(255, 255, 255, 0.1)',
+              fontSize: '0.72rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fde047', fontWeight: 700 }}>
+                <span>Total Laba:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(monthStats.totalProfit)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c084fc' }}>
+                <span>🔧 Keuntungan Jasa:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(monthStats.profitJasa)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8' }}>
+                <span>📦 Keuntungan Part:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(monthStats.profitSparepart)}</span>
+              </div>
             </div>
           </div>
 
@@ -434,7 +544,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             }}
             title="Klik untuk filter transaksi Tahun Ini"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
               <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Omzet Tahun Ini
               </span>
@@ -455,9 +565,32 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)', marginBottom: '0.2rem' }}>
               {formatCurrency(yearOmzet)}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <span>Tahun {currentParts.year}</span>
               <span style={{ color: '#c4b5fd', fontWeight: 600 }}>{yearTx.length} Transaksi</span>
+            </div>
+
+            {/* Pemisahan Keuntungan Jasa vs Sparepart Tahun Ini */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              paddingTop: '6px',
+              borderTop: '1px dashed rgba(255, 255, 255, 0.1)',
+              fontSize: '0.72rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fde047', fontWeight: 700 }}>
+                <span>Total Laba:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(yearStats.totalProfit)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#c084fc' }}>
+                <span>🔧 Keuntungan Jasa:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(yearStats.profitJasa)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8' }}>
+                <span>📦 Keuntungan Part:</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(yearStats.profitSparepart)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -469,7 +602,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
         border: '1px solid var(--border-color)',
         borderRadius: '12px',
         padding: '1.15rem 1.25rem',
-        marginBottom: '1.25rem',
+        marginBottom: '1rem',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
@@ -501,26 +634,171 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           </div>
         </div>
 
-        {/* KOTAK TOTAL OMZET DINAMIS (Owner) / TOTAL TRANSAKSI (Kasir) */}
-        <div style={{
-          background: 'var(--bg-input)',
-          border: '1px solid var(--border-color)',
-          padding: '0.65rem 1.25rem',
-          borderRadius: '10px',
-          textAlign: 'right',
-          minWidth: '220px'
-        }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
-            {isSuperAdmin ? `OMZET LUNAS: ${getPeriodLabel().toUpperCase()}` : 'STATUS DATA'}
+        {/* KOTAK TOTAL OMZET & LABA DINAMIS (Owner) / TOTAL TRANSAKSI (Kasir) */}
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            padding: '0.65rem 1.15rem',
+            borderRadius: '10px',
+            textAlign: 'right',
+            minWidth: '190px'
+          }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+              {isSuperAdmin ? `OMZET LUNAS` : 'STATUS DATA'}
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
+              {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${completedTransactions.length} Transaksi Lunas`}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              {getPeriodLabel()}
+            </div>
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-            {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${completedTransactions.length} Transaksi Lunas`}
-          </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            {safeDrafts.length > 0 ? `${safeDrafts.length} antrean draft motor aktif` : 'Semua transaksi selesai'}
-          </div>
+
+          {isSuperAdmin && (
+            <div style={{
+              background: 'rgba(234, 179, 8, 0.08)',
+              border: '1px solid rgba(234, 179, 8, 0.3)',
+              padding: '0.65rem 1.15rem',
+              borderRadius: '10px',
+              textAlign: 'right',
+              minWidth: '200px'
+            }}>
+              <div style={{ fontSize: '0.7rem', color: '#fde047', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                TOTAL LABA BERSIH
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#facc15', fontFamily: 'var(--font-mono)' }}>
+                {formatCurrency(currentPeriodStats.totalProfit)}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
+                <span style={{ color: '#c084fc', fontWeight: 600 }}>🔧 Jasa: {formatCurrency(currentPeriodStats.profitJasa)}</span>
+                <span>•</span>
+                <span style={{ color: '#38bdf8', fontWeight: 600 }}>📦 Part: {formatCurrency(currentPeriodStats.profitSparepart)}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* 2 KARTU UTAMA PEMISAHAN KEUNTUNGAN (KEUNTUNGAN JASA & KEUNTUNGAN SPAREPART) - KHUSUS OWNER */}
+      {isSuperAdmin && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.25rem'
+        }}>
+          {/* KARTU 1: KEUNTUNGAN JASA */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.14), rgba(30, 41, 59, 0.8))',
+            border: '1px solid rgba(168, 85, 247, 0.35)',
+            borderRadius: '12px',
+            padding: '1.1rem 1.25rem',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(168, 85, 247, 0.25)',
+                  color: '#c084fc',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.15rem'
+                }}>
+                  <IoConstructOutline />
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#d8b4fe', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Keuntungan Jasa (Servis)
+                  </span>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                    Periode: {getPeriodLabel()}
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                background: 'rgba(168, 85, 247, 0.2)',
+                color: '#c084fc',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '99px',
+                border: '1px solid rgba(168, 85, 247, 0.3)'
+              }}>
+                100% Ongkos Kerja
+              </span>
+            </div>
+
+            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#c084fc', fontFamily: 'var(--font-mono)', margin: '0.35rem 0' }}>
+              {formatCurrency(currentPeriodStats.profitJasa)}
+            </div>
+
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Total pendapatan bersih dari pengerjaan servis motor, ongkos pasang part, tune up, dan penanganan teknisi bengkel.
+            </p>
+          </div>
+
+          {/* KARTU 2: KEUNTUNGAN SPAREPART */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(30, 41, 59, 0.8))',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: '12px',
+            padding: '1.1rem 1.25rem',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(56, 189, 248, 0.25)',
+                  color: '#38bdf8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.15rem'
+                }}>
+                  <IoCubeOutline />
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Keuntungan Sparepart
+                  </span>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                    Periode: {getPeriodLabel()}
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                background: 'rgba(56, 189, 248, 0.2)',
+                color: '#38bdf8',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '99px',
+                border: '1px solid rgba(56, 189, 248, 0.3)'
+              }}>
+                Margin Penjualan Part
+              </span>
+            </div>
+
+            <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)', margin: '0.35rem 0' }}>
+              {formatCurrency(currentPeriodStats.profitSparepart)}
+            </div>
+
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+              Selisih bersih antara harga jual ke konsumen dikurangi harga modal kulakan dari distributor untuk semua suku cadang & oli.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* FILTER BAR PERIODE, DRAFT & PENCARIAN */}
       <div style={{
@@ -784,19 +1062,22 @@ export const TransactionsView = ({ onNavigateToPos }) => {
               <th style={{ padding: '0.85rem 1rem' }}>Pelanggan / Motor</th>
               <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Status / Metode</th>
               <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Total Bayar</th>
+              {isSuperAdmin && (
+                <th style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>Keuntungan (Laba)</th>
+              )}
               <th style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>Aksi</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={isSuperAdmin ? "8" : "7"} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   Memuat riwayat transaksi...
                 </td>
               </tr>
             ) : finalFilteredTx.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={isSuperAdmin ? "8" : "7"} style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.5 }}>📂</div>
                   <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem', color: 'var(--text-main)' }}>
                     Tidak ada catatan ditemukan
@@ -888,6 +1169,28 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                       {formatCurrency(tx.total_amount)}
                       {isDraft && <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>Estimasi</span>}
                     </td>
+
+                    {/* KOLOM KEUNTUNGAN LABA BERSIH: JASA VS SPAREPART (KHUSUS OWNER) */}
+                    {isSuperAdmin && (
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                        {isDraft ? (
+                          <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem', fontStyle: 'italic' }}>-</span>
+                        ) : (() => {
+                          const txProfit = getTxProfit(tx);
+                          return (
+                            <div>
+                              <div style={{ fontWeight: 800, color: '#facc15', fontFamily: 'var(--font-mono)', fontSize: '0.88rem' }}>
+                                {formatCurrency(txProfit.totalProfit)}
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px', display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                <span style={{ color: '#c084fc', fontWeight: 600 }} title="Keuntungan Jasa">🔧 {formatCurrency(txProfit.profitJasa)}</span>
+                                <span style={{ color: '#38bdf8', fontWeight: 600 }} title="Keuntungan Sparepart">📦 {formatCurrency(txProfit.profitSparepart)}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    )}
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         {isDraft ? (

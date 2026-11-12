@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { formatCurrency, formatNumber } from '../utils/bluetoothPrinter';
+import { useAuth } from '../context/AuthContext';
 import { 
   IoCloseCircleOutline, 
   IoCloudUploadOutline, 
@@ -26,6 +27,7 @@ const parseRupiahInput = (val) => {
 };
 
 export const AddProductModal = ({ productToEdit, brands, categories, onClose, onSuccess }) => {
+  const { isSuperAdmin } = useAuth();
   const [isService, setIsService] = useState(productToEdit?.is_service || false);
   const [name, setName] = useState(productToEdit?.name || '');
   const [brandId, setBrandId] = useState(productToEdit?.brand_id || '');
@@ -346,15 +348,38 @@ export const AddProductModal = ({ productToEdit, brands, categories, onClose, on
           {!isService && (
             <div className="form-grid-2">
               <div className="form-group">
-                <label className="form-label">Stok Fisik Awal</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{productToEdit ? 'Jumlah Stok Fisik' : 'Stok Fisik Awal'}</span>
+                  {productToEdit && isSuperAdmin && (
+                    <span style={{ fontSize: '0.7rem', color: '#34d399', fontWeight: 700 }}>
+                      👑 Hak Admin: Bisa diedit
+                    </span>
+                  )}
+                  {productToEdit && !isSuperAdmin && (
+                    <span style={{ fontSize: '0.7rem', color: '#f87171', fontWeight: 700 }}>
+                      🔒 Hanya Admin
+                    </span>
+                  )}
+                </label>
                 <input
                   type="number"
                   min="0"
                   className="form-input"
                   value={stock}
                   onChange={(e) => setStock(e.target.value)}
-                  disabled={Boolean(productToEdit)} // edit stok pakai tombol Tambah Stok agar ada riwayat audit
+                  disabled={Boolean(productToEdit) && !isSuperAdmin}
+                  style={productToEdit && isSuperAdmin ? { borderColor: '#10b981', background: 'rgba(16, 185, 129, 0.08)' } : {}}
                 />
+                {productToEdit && isSuperAdmin && (
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginTop: '3px' }}>
+                    ✓ Mode Admin: Anda dapat mengedit jumlah stok langsung. Perubahan akan tercatat ke log audit.
+                  </div>
+                )}
+                {productToEdit && !isSuperAdmin && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '3px' }}>
+                    Jumlah stok gudang terkunci (hanya dapat diedit oleh Admin).
+                  </div>
+                )}
               </div>
 
               <div className="form-group">

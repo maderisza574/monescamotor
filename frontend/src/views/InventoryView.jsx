@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { formatCurrency, formatNumber } from '../utils/bluetoothPrinter';
+import { useAuth } from '../context/AuthContext';
 import { AddProductModal } from '../components/AddProductModal';
 import { QuickRestockModal } from '../components/QuickRestockModal';
 import { 
@@ -15,6 +16,7 @@ import {
 } from 'react-icons/io5';
 
 export const InventoryView = () => {
+  const { isSuperAdmin } = useAuth();
   const [products, setProducts] = useState([]);
   const [brands, setBrands] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -464,22 +466,23 @@ export const InventoryView = () => {
 
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
-                        {/* Tombol Cepat Tambah Stok Masuk */}
+                        {/* Tombol Cepat Tambah / Koreksi Stok (Khusus Admin bisa koreksi langsung) */}
                         {!p.is_service && (
                           <button
                             onClick={() => setProductToRestock(p)}
                             style={{
                               padding: '4px 8px',
-                              background: 'rgba(16, 185, 129, 0.15)',
-                              color: '#34d399',
-                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              background: isSuperAdmin ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              color: isSuperAdmin ? '#60a5fa' : '#34d399',
+                              border: `1px solid ${isSuperAdmin ? 'rgba(59, 130, 246, 0.35)' : 'rgba(16, 185, 129, 0.3)'}`,
                               borderRadius: '6px',
                               fontSize: '0.75rem',
                               fontWeight: 700,
+                              cursor: 'pointer',
                             }}
-                            title="Tambah Stok Masuk (Kulakan)"
+                            title={isSuperAdmin ? "Kelola / Edit Jumlah Stok Gudang (Admin)" : "Tambah Stok Masuk (Kulakan)"}
                           >
-                            + Stok
+                            {isSuperAdmin ? "± Edit Stok" : "+ Stok"}
                           </button>
                         )}
 
@@ -493,24 +496,28 @@ export const InventoryView = () => {
                             background: 'transparent',
                             color: 'var(--text-muted)',
                             borderRadius: '6px',
+                            cursor: 'pointer',
                           }}
-                          title="Edit Data"
+                          title={isSuperAdmin ? "Edit Data & Stok" : "Edit Data Sparepart"}
                         >
                           <IoCreateOutline size={18} />
                         </button>
 
-                        <button
-                          onClick={() => handleDelete(p)}
-                          style={{
-                            padding: '4px 6px',
-                            background: 'transparent',
-                            color: '#ef4444',
-                            borderRadius: '6px',
-                          }}
-                          title="Hapus"
-                        >
-                          <IoTrashOutline size={18} />
-                        </button>
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => handleDelete(p)}
+                            style={{
+                              padding: '4px 6px',
+                              background: 'transparent',
+                              color: '#ef4444',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                            }}
+                            title="Hapus Sparepart (Khusus Admin)"
+                          >
+                            <IoTrashOutline size={18} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
