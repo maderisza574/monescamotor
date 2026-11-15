@@ -303,6 +303,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     vehicle_plate: d.vehicle_plate || null,
     vehicle_model: d.vehicle_model || null,
     payment_method: 'DRAFT',
+    cash_given: Number(d.cash_given || 0),
     total_amount: Number(d.total_amount || d.subtotal || 0),
     status: 'DRAFT',
     is_draft: true,
@@ -1165,9 +1166,24 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: isDraft ? '#38bdf8' : '#34d399' }}>
-                      {formatCurrency(tx.total_amount)}
-                      {isDraft && <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>Estimasi</span>}
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                      <div style={{ fontWeight: 800, color: isDraft ? '#38bdf8' : '#34d399' }}>
+                        {formatCurrency(tx.total_amount)}
+                      </div>
+                      {isDraft && (
+                        Number(tx.cash_given) > 0 ? (
+                          <div style={{ fontSize: '0.68rem', marginTop: '2px', lineHeight: 1.25 }}>
+                            <span style={{ color: '#fbbf24', fontWeight: 600 }}>DP: {formatCurrency(tx.cash_given)}</span>
+                            <div style={{ color: '#38bdf8', fontWeight: 700 }}>
+                              Sisa: {formatCurrency(Math.max(0, Number(tx.total_amount) - Number(tx.cash_given)))}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>
+                            Estimasi (Belum DP)
+                          </span>
+                        )
+                      )}
                     </td>
 
                     {/* KOLOM KEUNTUNGAN LABA BERSIH: JASA VS SPAREPART (KHUSUS OWNER) */}

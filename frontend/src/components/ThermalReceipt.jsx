@@ -246,6 +246,19 @@ export const ThermalReceipt = ({ transaction, store, onClose }) => {
             <span>{formatCurrency(transaction.total_amount)}</span>
           </div>
 
+          {isDraft && Number(transaction.cash_given) > 0 && (
+            <>
+              <div className="receipt-row" style={{ color: '#047857', fontWeight: 600 }}>
+                <span>Titip Uang (DP)</span>
+                <span>{formatNumber(transaction.cash_given)}</span>
+              </div>
+              <div className="receipt-row receipt-bold" style={{ color: '#b45309' }}>
+                <span>Sisa Estimasi</span>
+                <span>{formatCurrency(Math.max(0, Number(transaction.total_amount) - Number(transaction.cash_given)))}</span>
+              </div>
+            </>
+          )}
+
           {!isDraft ? (
             <>
               <div className="receipt-row">

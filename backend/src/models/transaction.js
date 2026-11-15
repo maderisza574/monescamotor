@@ -278,6 +278,7 @@ module.exports = {
         subtotal: trxData.subtotal,
         discount: trxData.discount,
         total_amount: trxData.total_amount,
+        cash_given: Number(trxData.cash_given || 0),
         notes: trxData.notes || null,
       })
       .eq("id", realId);

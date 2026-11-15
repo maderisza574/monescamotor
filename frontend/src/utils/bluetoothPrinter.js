@@ -451,6 +451,13 @@ export const printViaWebBluetooth = async (transaction, store, options = {}) => 
     text += escposFormat.BOLD_ON;
     text += formatRow58mm('ESTIMASI TOTAL', formatNumber(transaction.total_amount), 32);
     text += escposFormat.BOLD_OFF;
+    if (Number(transaction.cash_given) > 0) {
+      text += formatRow58mm('Titip Uang (DP)', formatNumber(transaction.cash_given), 32);
+      const sisa = Math.max(0, Number(transaction.total_amount) - Number(transaction.cash_given));
+      text += escposFormat.BOLD_ON;
+      text += formatRow58mm('Sisa Tagihan', formatNumber(sisa), 32);
+      text += escposFormat.BOLD_OFF;
+    }
     text += 'Status: DALAM PENGERJAAN\n';
     text += '--------------------------------\n';
     text += escposFormat.ALIGN_CENTER;

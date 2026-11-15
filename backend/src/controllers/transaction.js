@@ -164,6 +164,8 @@ module.exports = {
         vehicle_plate,
         vehicle_model,
         discount = 0,
+        cash_given = 0,
+        deposit = 0,
         notes,
         items = [],
       } = request.body;
@@ -181,6 +183,7 @@ module.exports = {
       }
 
       const totalAmount = Math.max(0, subtotal - Number(discount));
+      const depositAmount = Number(cash_given || deposit || 0);
       const cashierName = request.user ? request.user.name : (request.body.cashier_name || "Kasir");
 
       // Jika draft_id sudah ada di database, lakukan update
@@ -196,6 +199,7 @@ module.exports = {
               subtotal,
               discount: Number(discount),
               total_amount: totalAmount,
+              cash_given: depositAmount,
               notes: notes || null,
             },
             items
@@ -224,7 +228,7 @@ module.exports = {
         discount: Number(discount),
         total_amount: totalAmount,
         payment_method: "DRAFT",
-        cash_given: 0,
+        cash_given: depositAmount,
         change_due: 0,
         status: "DRAFT",
         notes: notes || null,

@@ -52,6 +52,7 @@ export const PosView = () => {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [cashGiven, setCashGiven] = useState('');
+  const [deposit, setDeposit] = useState(0); // Uang Titip / DP Motor Ditinggal
   const [notes, setNotes] = useState('');
 
   // Antrean Draft / Motor Ditinggal (Tersimpan di Cloud Database Supabase)
@@ -197,6 +198,7 @@ export const PosView = () => {
       vehicle_plate: vehiclePlate.trim().toUpperCase() || '',
       vehicle_model: vehicleModel.trim() || '',
       discount: Number(discount) || 0,
+      cash_given: Number(deposit || 0),
       notes: notes || '',
       items: cart.map((item) => ({
         product_id: item.product_id || null,
@@ -225,12 +227,14 @@ export const PosView = () => {
       setCustomerName('Pelanggan Umum');
       setDiscount(0);
       setCashGiven('');
+      setDeposit(0);
       setNotes('');
       setActiveDraftId(null);
       setMobileTab('catalog');
 
       const plateLabel = draftPayload.vehicle_plate ? `(${draftPayload.vehicle_plate})` : '';
-      alert(`✓ Motor ${plateLabel} berhasil disimpan ke database cloud! Antrean ini otomatis muncul di laptop owner & laptop kasir.`);
+      const depositLabel = Number(deposit) > 0 ? ` [Titip DP: Rp ${formatNumber(deposit)}]` : '';
+      alert(`✓ Motor ${plateLabel}${depositLabel} berhasil disimpan ke database cloud! Antrean ini otomatis muncul di laptop owner & laptop kasir.`);
     } catch (err) {
       console.error('Gagal menyimpan draft:', err);
       alert(err.response?.data?.message || 'Gagal menyimpan draft ke database');
@@ -266,6 +270,8 @@ export const PosView = () => {
     setVehicleModel(draft.vehicle_model || '');
     setCustomerName(draft.customer_name || 'Pelanggan Umum');
     setDiscount(Number(draft.discount || 0));
+    setDeposit(Number(draft.cash_given || 0));
+    setCashGiven('');
     setNotes(draft.notes || '');
     setActiveDraftId(draft.id || draft.draft_id);
     setShowDraftsModal(false);
@@ -287,11 +293,16 @@ export const PosView = () => {
     }
   };
 
-  // Kalkulasi Total
+  // Kalkulasi Total & Uang Titip (DP)
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const totalAmount = Math.max(0, subtotal - Number(discount || 0));
-  const changeDue = paymentMethod === 'CASH' && cashGiven 
-    ? Math.max(0, Number(cashGiven) - totalAmount) 
+  const depositNum = Number(deposit || 0);
+  const remainingDue = Math.max(0, totalAmount - depositNum);
+
+  // Jika bayar tunai: customer membayar sisa kekurangan
+  const cashGivenNum = Number(cashGiven) || 0;
+  const changeDue = paymentMethod === 'CASH' && cashGivenNum > 0 
+    ? Math.max(0, cashGivenNum - remainingDue) 
     : 0;
 
   const handleQuickCash = (amount) => {
@@ -303,8 +314,12 @@ export const PosView = () => {
 
     if (paymentMethod === 'CASH') {
       const given = Number(cashGiven) || 0;
-      if (given < totalAmount) {
-        setErrorMessage(`Nominal bayar masih kurang Rp ${formatNumber(totalAmount - given)}`);
+      if (given < remainingDue) {
+        setErrorMessage(
+          depositNum > 0
+            ? `Nominal pelunasan masih kurang Rp ${formatNumber(remainingDue - given)} (Sisa dari total Rp ${formatNumber(totalAmount)} setelah dipotong DP Rp ${formatNumber(depositNum)})`
+            : `Nominal bayar masih kurang Rp ${formatNumber(remainingDue - given)}`
+        );
         return;
       }
     }
@@ -313,6 +328,14 @@ export const PosView = () => {
       setProcessingOrder(true);
       setErrorMessage(null);
 
+      // Total uang yang diterima dari konsumen: DP yang sudah dititipkan + uang pelunasan saat ini
+      const totalCashReceived = paymentMethod === 'CASH' 
+        ? (depositNum + Number(cashGiven || 0)) 
+        : totalAmount;
+
+      const dpNote = depositNum > 0 ? `(Titip DP: Rp ${formatNumber(depositNum)})` : '';
+      const finalNotes = notes ? (dpNote ? `${notes} ${dpNote}` : notes) : (dpNote || null);
+
       const payload = {
         draft_id: activeDraftId || null,
         customer_name: customerName.trim() || 'Pelanggan Umum',
@@ -320,8 +343,8 @@ export const PosView = () => {
         vehicle_model: vehicleModel.trim() || null,
         discount: Number(discount) || 0,
         payment_method: paymentMethod,
-        cash_given: paymentMethod === 'CASH' ? Number(cashGiven) : totalAmount,
-        notes: notes || null,
+        cash_given: totalCashReceived,
+        notes: finalNotes,
         items: cart,
       };
 
@@ -335,6 +358,7 @@ export const PosView = () => {
       // Bersihkan keranjang kasir
       setCart([]);
       setCashGiven('');
+      setDeposit(0);
       setVehiclePlate('');
       setVehicleModel('');
       setCustomerName('Pelanggan Umum');
@@ -508,6 +532,8 @@ export const PosView = () => {
                 if (window.confirm('Kosongkan keranjang faktur saat ini?')) {
                   setCart([]);
                   setActiveDraftId(null);
+                  setDeposit(0);
+                  setCashGiven('');
                 }
               }}
               style={{ background: 'transparent', color: '#ef4444', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}
@@ -734,10 +760,11 @@ export const PosView = () => {
               <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.45rem' }}>
                 <button
                   type="button"
-                  onClick={() => handleQuickCash(totalAmount)}
+                  onClick={() => handleQuickCash(remainingDue)}
                   style={{ flex: 1, padding: '3px', fontSize: '0.7rem', background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-muted)' }}
+                  title={depositNum > 0 ? `Isi pas sisa tagihan: Rp ${formatNumber(remainingDue)}` : 'Uang Pas'}
                 >
-                  Uang Pas
+                  {depositNum > 0 ? 'Pas Sisa' : 'Uang Pas'}
                 </button>
                 <button
                   type="button"
@@ -763,7 +790,9 @@ export const PosView = () => {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Uang Diterima:</span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {depositNum > 0 ? 'Pelunasan Diterima:' : 'Uang Diterima:'}
+                </span>
                 <div style={{ position: 'relative', width: '135px' }}>
                   <input
                     type="text"
@@ -799,8 +828,113 @@ export const PosView = () => {
             </div>
           )}
 
+          {/* FORM UANG TITIP / DP (MOTOR DITINGGAL) */}
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            borderRadius: '8px',
+            padding: '0.6rem 0.7rem',
+            marginTop: '0.75rem',
+            marginBottom: '0.35rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.35rem' }}>
+              <div>
+                <div style={{ fontSize: '0.8rem', color: '#fbbf24', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  💰 Uang Titip / DP:
+                </div>
+                <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                  Titipan saat motor ditinggal
+                </div>
+              </div>
+
+              <div style={{ position: 'relative', width: '135px' }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0 (Jika ada)"
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px 4px 28px',
+                    background: 'var(--bg-input)',
+                    border: '1px solid rgba(245, 158, 11, 0.5)',
+                    borderRadius: '6px',
+                    color: '#fef08a',
+                    fontSize: '0.88rem',
+                    fontFamily: 'var(--font-mono)',
+                    textAlign: 'right',
+                    fontWeight: 700,
+                  }}
+                  value={deposit ? formatRupiahInput(deposit) : ''}
+                  onChange={(e) => setDeposit(parseRupiahInput(e.target.value))}
+                />
+                <span style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#fbbf24', fontWeight: 800, pointerEvents: 'none' }}>
+                  Rp
+                </span>
+              </div>
+            </div>
+
+            {/* Quick DP buttons */}
+            <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.35rem' }}>
+              {[20000, 50000, 100000, 200000, 500000].map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setDeposit(amt)}
+                  style={{
+                    flex: 1,
+                    padding: '2px 3px',
+                    fontSize: '0.67rem',
+                    background: deposit === amt ? '#f59e0b' : 'rgba(245, 158, 11, 0.15)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    borderRadius: '4px',
+                    color: deposit === amt ? '#000' : '#fbbf24',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {amt >= 1000000 ? `${amt / 1000000}jt` : `${amt / 1000}rb`}
+                </button>
+              ))}
+              {deposit > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDeposit(0)}
+                  style={{
+                    padding: '2px 6px',
+                    fontSize: '0.67rem',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '4px',
+                    color: '#f87171',
+                    cursor: 'pointer',
+                  }}
+                  title="Hapus nominal uang titip"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {deposit > 0 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: '0.45rem',
+                paddingTop: '0.45rem',
+                borderTop: '1px dashed rgba(245, 158, 11, 0.25)',
+                fontSize: '0.78rem'
+              }}>
+                <span style={{ color: 'var(--text-muted)' }}>Sisa Kekurangan Tagihan:</span>
+                <span style={{ color: '#38bdf8', fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
+                  {formatCurrency(remainingDue)}
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Tombol Simpan Draft Motor Ditinggal (Tanpa Cetak) */}
-          <div style={{ marginTop: '0.75rem' }}>
+          <div style={{ marginTop: '0.45rem' }}>
             <button
               type="button"
               onClick={handleSaveDraft}
@@ -823,7 +957,10 @@ export const PosView = () => {
               title="Simpan motor yang ditinggal ke riwayat antrean tanpa mencetak"
             >
               <IoTimeOutline size={17} />
-              <span>Simpan sebagai Draft (Motor Ditinggal)</span>
+              <span>
+                {activeDraftId ? 'Perbarui Antrean Draft' : 'Simpan sebagai Draft (Motor Ditinggal)'}
+                {deposit > 0 ? ` • DP ${formatNumber(deposit)}` : ''}
+              </span>
             </button>
           </div>
 
@@ -833,7 +970,11 @@ export const PosView = () => {
             disabled={processingOrder}
           >
             <IoCheckmarkCircle size={18} />
-            {processingOrder ? 'Memproses Transaksi...' : 'Bayar & Cetak Struk (Lunas)'}
+            {processingOrder 
+              ? 'Memproses Transaksi...' 
+              : activeDraftId && depositNum > 0
+                ? `Bayar & Cetak Struk (Sisa ${formatNumber(remainingDue)})`
+                : 'Bayar & Cetak Struk (Lunas)'}
           </button>
         </div>
       )}
@@ -948,6 +1089,11 @@ export const PosView = () => {
             }}>
               <div>
                 <strong>🛵 Mode Antrean Motor:</strong> {vehiclePlate || 'Tanpa Plat'} {vehicleModel ? `(${vehicleModel})` : ''} - {customerName}
+                {depositNum > 0 && (
+                  <span style={{ marginLeft: '8px', background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '2px 7px', borderRadius: '4px', fontWeight: 700, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    💰 Sudah Titip DP: {formatCurrency(depositNum)} (Sisa: {formatCurrency(remainingDue)})
+                  </span>
+                )}
               </div>
               <div style={{ display: 'flex', gap: '0.4rem' }}>
                 <button
@@ -976,6 +1122,8 @@ export const PosView = () => {
                     if (window.confirm('Keluar dari mode pengerjaan antrean ini tanpa mengubah draft?')) {
                       setCart([]);
                       setActiveDraftId(null);
+                      setDeposit(0);
+                      setCashGiven('');
                       setVehiclePlate('');
                       setVehicleModel('');
                       setCustomerName('Pelanggan Umum');
@@ -1360,9 +1508,23 @@ export const PosView = () => {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed var(--border-color)' }}>
-                        <span style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>
-                          {formatCurrency(draft.total_amount)}
-                        </span>
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>
+                            {formatCurrency(draft.total_amount)}
+                          </div>
+                          {Number(draft.cash_given) > 0 ? (
+                            <div style={{ fontSize: '0.72rem', color: '#fbbf24', marginTop: '2px' }}>
+                              <span>💰 Titip DP: {formatCurrency(draft.cash_given)}</span>
+                              <span style={{ marginLeft: '6px', color: '#38bdf8', fontWeight: 700 }}>
+                                (Sisa: {formatCurrency(Math.max(0, Number(draft.total_amount) - Number(draft.cash_given)))})
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '1px' }}>
+                              Belum Ada Uang Titip (DP: Rp 0)
+                            </div>
+                          )}
+                        </div>
 
                         <div style={{ display: 'flex', gap: '0.4rem' }}>
                           <button
