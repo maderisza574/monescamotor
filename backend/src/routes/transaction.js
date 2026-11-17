@@ -8,6 +8,10 @@ Router.get("/drafts/all", transactionController.getDrafts);
 Router.post("/drafts", transactionController.saveDraft);
 Router.delete("/drafts/:id", transactionController.deleteDraft);
 
+// Rute Pencatatan Pengeluaran Operasional / Belanja Bengkel
+Router.post("/expenses", transactionController.createExpense);
+Router.delete("/expenses/:id", transactionController.deleteExpense);
+
 Router.get("/", transactionController.getAllTransactions);
 Router.get("/:id", transactionController.getTransactionById);
 Router.post("/", transactionController.createTransaction);

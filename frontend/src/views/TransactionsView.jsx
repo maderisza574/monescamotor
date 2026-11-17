@@ -3,6 +3,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/bluetoothPrinter';
 import { ThermalReceipt } from '../components/ThermalReceipt';
+import { ExpenseModal } from '../components/ExpenseModal';
 import { 
   IoPrintOutline, 
   IoReceiptOutline, 
@@ -111,6 +112,9 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   const [resetRestoreStock, setResetRestoreStock] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // State Modal Catat Pengeluaran
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+
   useEffect(() => {
     fetchTransactions();
     fetchStoreSettings();
@@ -210,18 +214,52 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     }
   };
 
-  // HANYA transaksi selesai (bukan draft) yang dihitung ke omzet keuangan riil
-  const completedTransactions = transactions.filter((t) => !t.is_draft && t.status !== 'DRAFT');
+  // Hapus catatan pengeluaran
+  const handleDeleteExpense = async (expenseId) => {
+    if (!window.confirm('Hapus catatan pengeluaran ini dari database?')) return;
+    try {
+      setLoading(true);
+      await api.delete(`/transactions/expenses/${expenseId}`);
+      await fetchTransactions();
+      alert('✓ Catatan pengeluaran berhasil dihapus');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Gagal menghapus catatan pengeluaran');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Kalkulasi Keuntungan (Laba Bersih): Dipisahkan menjadi Keuntungan Jasa dan Keuntungan Sparepart
+  // Normalisasi Transaksi Selesai & Pengeluaran
+  const safeTransactions = (Array.isArray(transactions) ? transactions : []).map((t) => {
+    const isExp = t.status === 'EXPENSE' || t.invoice_number?.startsWith('EXP-');
+    return {
+      ...t,
+      status: t.status || (isExp ? 'EXPENSE' : 'COMPLETED'),
+      is_draft: false,
+      is_expense: isExp,
+    };
+  });
+
+  const expenseTransactions = safeTransactions.filter((t) => t.is_expense);
+  const completedTransactions = safeTransactions.filter((t) => !t.is_expense);
+
+  // Kalkulasi Keuntungan & Pengeluaran: Dipisahkan menjadi Keuntungan Jasa, Keuntungan Sparepart, dan Pengeluaran
   const computeProfitStats = (txList) => {
     let profitJasa = 0;
     let profitSparepart = 0;
     let omzet = 0;
+    let totalPengeluaran = 0;
     let totalDiskon = 0;
 
     (txList || []).forEach((tx) => {
       if (tx.is_draft || tx.status === 'DRAFT') return;
+
+      if (tx.is_expense || tx.status === 'EXPENSE' || tx.invoice_number?.startsWith('EXP-')) {
+        totalPengeluaran += Number(tx.total_amount || 0);
+        return;
+      }
+
       omzet += Number(tx.total_amount || 0);
       totalDiskon += Number(tx.discount || 0);
 
@@ -239,13 +277,16 @@ export const TransactionsView = ({ onNavigateToPos }) => {
       });
     });
 
-    const totalProfit = Math.max(0, profitJasa + profitSparepart - totalDiskon);
+    const labaKotor = Math.max(0, profitJasa + profitSparepart - totalDiskon);
+    const totalProfit = Math.max(0, labaKotor - totalPengeluaran);
 
     return {
       omzet,
+      totalPengeluaran,
       profitJasa,
       profitSparepart,
       totalDiskon,
+      labaKotor,
       totalProfit,
     };
   };
@@ -253,6 +294,10 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   const getTxProfit = (tx) => {
     if (tx.is_draft || tx.status === 'DRAFT') {
       return { profitJasa: 0, profitSparepart: 0, totalProfit: 0 };
+    }
+    if (tx.is_expense || tx.status === 'EXPENSE' || tx.invoice_number?.startsWith('EXP-')) {
+      const expAmt = Number(tx.total_amount || 0);
+      return { profitJasa: 0, profitSparepart: 0, totalProfit: -expAmt, isExpense: true };
     }
     let profitJasa = 0;
     let profitSparepart = 0;
@@ -272,21 +317,21 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     return { profitJasa, profitSparepart, totalProfit };
   };
 
-  const todayTx = completedTransactions.filter((t) => {
+  const todayTx = safeTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month && p.date === currentParts.date;
   });
   const todayStats = computeProfitStats(todayTx);
   const todayOmzet = todayStats.omzet;
 
-  const monthTx = completedTransactions.filter((t) => {
+  const monthTx = safeTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year && p.month === currentParts.month;
   });
   const monthStats = computeProfitStats(monthTx);
   const monthOmzet = monthStats.omzet;
 
-  const yearTx = completedTransactions.filter((t) => {
+  const yearTx = safeTransactions.filter((t) => {
     const p = getLocalDateParts(t.created_at);
     return p.year === currentParts.year;
   });
@@ -307,18 +352,12 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     total_amount: Number(d.total_amount || d.subtotal || 0),
     status: 'DRAFT',
     is_draft: true,
+    is_expense: false,
     items: Array.isArray(d.items) ? d.items : [],
     rawDraft: d,
   }));
 
-  // Normalisasi Transaksi Selesai
-  const safeTransactions = (Array.isArray(transactions) ? transactions : []).map((t) => ({
-    ...t,
-    status: t.status || 'COMPLETED',
-    is_draft: false,
-  }));
-
-  // Gabungkan seluruh data: Draft motor ditinggal + Transaksi selesai
+  // Gabungkan seluruh data: Draft motor ditinggal + Transaksi selesai + Pengeluaran
   const combinedList = [...safeDrafts, ...safeTransactions].sort((a, b) => {
     // Jika draft, utamakan di atas agar kasir langsung melihat motor yang sedang diservis
     if (a.is_draft && !b.is_draft) return -1;
@@ -332,6 +371,9 @@ export const TransactionsView = ({ onNavigateToPos }) => {
   const periodFilteredTx = combinedList.filter((t) => {
     if (periodFilter === 'drafts') {
       return Boolean(t.is_draft);
+    }
+    if (periodFilter === 'expenses') {
+      return Boolean(t.is_expense);
     }
     const p = getLocalDateParts(t.created_at);
     if (periodFilter === 'today') {
@@ -349,7 +391,7 @@ export const TransactionsView = ({ onNavigateToPos }) => {
     if (periodFilter === 'custom_month') {
       return p.monthString === customMonth;
     }
-    return true; // 'all' (semua transaksi selesai + draft)
+    return true; // 'all' (semua transaksi selesai + draft + pengeluaran)
   });
 
   // Filter pencarian teks
@@ -360,16 +402,18 @@ export const TransactionsView = ({ onNavigateToPos }) => {
       t.invoice_number?.toLowerCase().includes(query) ||
       t.customer_name?.toLowerCase().includes(query) ||
       t.vehicle_plate?.toLowerCase().includes(query) ||
-      t.vehicle_model?.toLowerCase().includes(query)
+      t.vehicle_model?.toLowerCase().includes(query) ||
+      t.notes?.toLowerCase().includes(query)
     );
   });
 
-  // Statistik Omzet & Laba Terpilih (hanya transaksi selesai)
+  // Statistik Omzet & Laba Terpilih
   const currentPeriodStats = computeProfitStats(periodFilteredTx);
   const currentPeriodOmzet = currentPeriodStats.omzet;
 
   const getPeriodLabel = () => {
     if (periodFilter === 'drafts') return `Khusus Draft Antrean Motor (${safeDrafts.length})`;
+    if (periodFilter === 'expenses') return `Khusus Pengeluaran Bengkel (${expenseTransactions.length})`;
     if (periodFilter === 'today') return `Hari Ini (${currentParts.date} ${MONTH_NAMES[currentParts.month]} ${currentParts.year})`;
     if (periodFilter === 'month') return `Bulan Ini (${MONTH_NAMES[currentParts.month]} ${currentParts.year})`;
     if (periodFilter === 'year') return `Tahun Ini (${currentParts.year})`;
@@ -631,11 +675,12 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
               Menampilkan {finalFilteredTx.length} catatan ({getPeriodLabel()})
               {safeDrafts.length > 0 && <span style={{ color: '#fbbf24', marginLeft: '6px', fontWeight: 700 }}>• {safeDrafts.length} motor dalam pengerjaan (Draft)</span>}
+              {expenseTransactions.length > 0 && <span style={{ color: '#f87171', marginLeft: '6px', fontWeight: 700 }}>• {expenseTransactions.length} pengeluaran</span>}
             </p>
           </div>
         </div>
 
-        {/* KOTAK TOTAL OMZET & LABA DINAMIS (Owner) / TOTAL TRANSAKSI (Kasir) */}
+        {/* KOTAK TOTAL OMZET, PENGELUARAN, & LABA DINAMIS */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div style={{
             background: 'var(--bg-input)',
@@ -643,16 +688,36 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             padding: '0.65rem 1.15rem',
             borderRadius: '10px',
             textAlign: 'right',
-            minWidth: '190px'
+            minWidth: '180px'
           }}>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
-              {isSuperAdmin ? `OMZET LUNAS` : 'STATUS DATA'}
+              {isSuperAdmin ? `OMZET PENJUALAN` : 'STATUS DATA'}
             </div>
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-              {isSuperAdmin ? formatCurrency(currentPeriodOmzet) : `${completedTransactions.length} Transaksi Lunas`}
+              {isSuperAdmin ? formatCurrency(currentPeriodStats.omzet) : `${completedTransactions.length} Transaksi Lunas`}
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
               {getPeriodLabel()}
+            </div>
+          </div>
+
+          {/* KOTAK TOTAL PENGELUARAN BENGKEL */}
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            padding: '0.65rem 1.15rem',
+            borderRadius: '10px',
+            textAlign: 'right',
+            minWidth: '180px'
+          }}>
+            <div style={{ fontSize: '0.7rem', color: '#fca5a5', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+              TOTAL PENGELUARAN
+            </div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)' }}>
+              {formatCurrency(currentPeriodStats.totalPengeluaran)}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              Makan/Minum & Bengkel
             </div>
           </div>
 
@@ -671,10 +736,16 @@ export const TransactionsView = ({ onNavigateToPos }) => {
               <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#facc15', fontFamily: 'var(--font-mono)' }}>
                 {formatCurrency(currentPeriodStats.totalProfit)}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '2px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#c084fc', fontWeight: 600 }}>🔧 Jasa: {formatCurrency(currentPeriodStats.profitJasa)}</span>
                 <span>•</span>
                 <span style={{ color: '#38bdf8', fontWeight: 600 }}>📦 Part: {formatCurrency(currentPeriodStats.profitSparepart)}</span>
+                {currentPeriodStats.totalPengeluaran > 0 && (
+                  <>
+                    <span>•</span>
+                    <span style={{ color: '#f87171', fontWeight: 600 }}>💸 Biaya: -{formatCurrency(currentPeriodStats.totalPengeluaran)}</span>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -861,6 +932,29 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <span>Draft Motor ({safeDrafts.length})</span>
           </button>
 
+          {/* TOMBOL FILTER KHUSUS PENGELUARAN BENGKEL */}
+          <button
+            type="button"
+            onClick={() => setPeriodFilter('expenses')}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: periodFilter === 'expenses' ? '#ef4444' : expenseTransactions.length > 0 ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-input)',
+              color: periodFilter === 'expenses' ? '#fff' : expenseTransactions.length > 0 ? '#f87171' : 'var(--text-muted)',
+              border: periodFilter === 'expenses' ? '1px solid #ef4444' : expenseTransactions.length > 0 ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-color)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s'
+            }}
+          >
+            <IoWalletOutline size={15} />
+            <span>Pengeluaran ({expenseTransactions.length})</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setPeriodFilter('today')}
@@ -1007,6 +1101,30 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             <IoRefreshOutline size={16} />
           </button>
 
+          {/* TOMBOL CATAT PENGELUARAN */}
+          <button
+            type="button"
+            onClick={() => setShowExpenseModal(true)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.35)',
+              marginLeft: isSuperAdmin ? '4px' : 'auto'
+            }}
+            title="Catat pengeluaran makan minum mekanik atau belanja kebutuhan bengkel"
+          >
+            <IoWalletOutline size={16} /> + Catat Pengeluaran
+          </button>
+
           {/* RESET OMZET (KHUSUS OWNER) */}
           {isSuperAdmin && (
             <button
@@ -1108,16 +1226,18 @@ export const TransactionsView = ({ onNavigateToPos }) => {
             ) : (
               finalFilteredTx.map((tx) => {
                 const isDraft = Boolean(tx.is_draft || tx.status === 'DRAFT');
+                const isExpense = Boolean(tx.is_expense || tx.status === 'EXPENSE' || tx.invoice_number?.startsWith('EXP-'));
                 return (
                   <tr 
                     key={tx.id || tx.invoice_number} 
                     style={{ 
                       borderBottom: '1px solid rgba(255, 255, 255, 0.05)', 
-                      background: isDraft ? 'rgba(245, 158, 11, 0.04)' : 'transparent',
+                      background: isDraft ? 'rgba(245, 158, 11, 0.04)' : isExpense ? 'rgba(239, 68, 68, 0.04)' : 'transparent',
                       transition: 'background 0.15s' 
                     }}
                   >
-                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: isDraft ? '#fbbf24' : '#60a5fa' }}>
+                    <td style={{ padding: '0.85rem 1rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: isDraft ? '#fbbf24' : isExpense ? '#f87171' : '#60a5fa' }}>
+                      {isExpense && <span style={{ marginRight: '4px' }}>💸</span>}
                       {tx.invoice_number}
                     </td>
                     <td style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
@@ -1127,16 +1247,39 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                       {tx.cashier_name || 'Kasir'}
                     </td>
                     <td style={{ padding: '0.85rem 1rem' }}>
-                      <div style={{ fontWeight: 600 }}>{tx.customer_name || 'Pelanggan Umum'}</div>
-                      {(tx.vehicle_plate || tx.vehicle_model) && (
-                        <div style={{ fontSize: '0.75rem', color: isDraft ? '#fbbf24' : '#38bdf8', fontWeight: isDraft ? 700 : 400 }}>
-                          {tx.vehicle_plate ? `[${tx.vehicle_plate.toUpperCase()}]` : ''} {tx.vehicle_model || ''}
+                      {isExpense ? (
+                        <div>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            background: 'rgba(239, 68, 68, 0.18)',
+                            color: '#f87171',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            marginBottom: '3px'
+                          }}>
+                            {tx.customer_name || 'PENGELUARAN BENGKEL'}
+                          </span>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 500 }}>
+                            {tx.notes || 'Biaya operasional bengkel'}
+                          </div>
                         </div>
-                      )}
-                      {isDraft && tx.items && tx.items.length > 0 && (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                          {tx.items.map((it) => `${it.quantity}x ${it.product_name}`).join(', ')}
-                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 600 }}>{tx.customer_name || 'Pelanggan Umum'}</div>
+                          {(tx.vehicle_plate || tx.vehicle_model) && (
+                            <div style={{ fontSize: '0.75rem', color: isDraft ? '#fbbf24' : '#38bdf8', fontWeight: isDraft ? 700 : 400 }}>
+                              {tx.vehicle_plate ? `[${tx.vehicle_plate.toUpperCase()}]` : ''} {tx.vehicle_model || ''}
+                            </div>
+                          )}
+                          {isDraft && tx.items && tx.items.length > 0 && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              {tx.items.map((it) => `${it.quantity}x ${it.product_name}`).join(', ')}
+                            </div>
+                          )}
+                        </>
                       )}
                     </td>
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
@@ -1151,6 +1294,18 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                           border: '1px solid rgba(245, 158, 11, 0.4)'
                         }}>
                           🛵 DRAFT (MOTOR DITINGGAL)
+                        </span>
+                      ) : isExpense ? (
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#f87171',
+                          border: '1px solid rgba(239, 68, 68, 0.35)'
+                        }}>
+                          💸 PENGELUARAN ({tx.payment_method || 'CASH'})
                         </span>
                       ) : (
                         <span style={{
@@ -1167,22 +1322,35 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                       )}
                     </td>
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                      <div style={{ fontWeight: 800, color: isDraft ? '#38bdf8' : '#34d399' }}>
-                        {formatCurrency(tx.total_amount)}
-                      </div>
-                      {isDraft && (
-                        Number(tx.cash_given) > 0 ? (
-                          <div style={{ fontSize: '0.68rem', marginTop: '2px', lineHeight: 1.25 }}>
-                            <span style={{ color: '#fbbf24', fontWeight: 600 }}>DP: {formatCurrency(tx.cash_given)}</span>
-                            <div style={{ color: '#38bdf8', fontWeight: 700 }}>
-                              Sisa: {formatCurrency(Math.max(0, Number(tx.total_amount) - Number(tx.cash_given)))}
-                            </div>
+                      {isExpense ? (
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#f87171', fontSize: '0.92rem' }}>
+                            - {formatCurrency(tx.total_amount)}
                           </div>
-                        ) : (
-                          <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>
-                            Estimasi (Belum DP)
+                          <span style={{ display: 'block', fontSize: '0.65rem', color: '#fca5a5', fontWeight: 400 }}>
+                            Uang Keluar
                           </span>
-                        )
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 800, color: isDraft ? '#38bdf8' : '#34d399' }}>
+                            {formatCurrency(tx.total_amount)}
+                          </div>
+                          {isDraft && (
+                            Number(tx.cash_given) > 0 ? (
+                              <div style={{ fontSize: '0.68rem', marginTop: '2px', lineHeight: 1.25 }}>
+                                <span style={{ color: '#fbbf24', fontWeight: 600 }}>DP: {formatCurrency(tx.cash_given)}</span>
+                                <div style={{ color: '#38bdf8', fontWeight: 700 }}>
+                                  Sisa: {formatCurrency(Math.max(0, Number(tx.total_amount) - Number(tx.cash_given)))}
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-dim)', fontWeight: 400 }}>
+                                Estimasi (Belum DP)
+                              </span>
+                            )
+                          )}
+                        </>
                       )}
                     </td>
 
@@ -1191,6 +1359,15 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                       <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
                         {isDraft ? (
                           <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem', fontStyle: 'italic' }}>-</span>
+                        ) : isExpense ? (
+                          <div>
+                            <div style={{ fontWeight: 800, color: '#f87171', fontFamily: 'var(--font-mono)', fontSize: '0.88rem' }}>
+                              - {formatCurrency(tx.total_amount)}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              Potong Laba Toko
+                            </div>
+                          </div>
                         ) : (() => {
                           const txProfit = getTxProfit(tx);
                           return (
@@ -1254,6 +1431,28 @@ export const TransactionsView = ({ onNavigateToPos }) => {
                               <IoTrashOutline size={16} />
                             </button>
                           </>
+                        ) : isExpense ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(tx.id || tx.invoice_number)}
+                            style={{
+                              padding: '0.45rem 0.75rem',
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#f87171',
+                              borderRadius: '6px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer'
+                            }}
+                            title="Hapus catatan pengeluaran ini"
+                          >
+                            <IoTrashOutline size={15} />
+                            <span>Hapus</span>
+                          </button>
                         ) : (
                           <>
                             <button
@@ -1316,6 +1515,17 @@ export const TransactionsView = ({ onNavigateToPos }) => {
           transaction={selectedTx}
           store={storeSettings}
           onClose={() => setSelectedTx(null)}
+        />
+      )}
+
+      {/* MODAL PENCATATAN PENGELUARAN */}
+      {showExpenseModal && (
+        <ExpenseModal
+          onClose={() => setShowExpenseModal(false)}
+          onSuccess={() => {
+            setShowExpenseModal(false);
+            fetchTransactions();
+          }}
         />
       )}
 

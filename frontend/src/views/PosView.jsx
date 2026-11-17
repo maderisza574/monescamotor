@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { formatCurrency, formatNumber } from '../utils/bluetoothPrinter';
 import { ThermalReceipt } from '../components/ThermalReceipt';
+import { ExpenseModal } from '../components/ExpenseModal';
 
 // Format angka menjadi ribuan Rupiah (contoh: 10000 -> "10.000")
 const formatRupiahInput = (val) => {
@@ -34,7 +35,8 @@ import {
   IoTimeOutline,
   IoDocumentTextOutline,
   IoCloseCircleOutline,
-  IoSaveOutline
+  IoSaveOutline,
+  IoWalletOutline
 } from 'react-icons/io5';
 
 export const PosView = () => {
@@ -59,6 +61,9 @@ export const PosView = () => {
   const [drafts, setDrafts] = useState([]);
   const [showDraftsModal, setShowDraftsModal] = useState(false);
   const [activeDraftId, setActiveDraftId] = useState(null);
+
+  // Pencatatan Pengeluaran Operasional / Belanja Bengkel
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
 
   // Input Item Manual / Part Beli di Luar (Non-Stok)
   const [showManualModal, setShowManualModal] = useState(false);
@@ -1007,7 +1012,7 @@ export const PosView = () => {
         {/* KATALOG PRODUK & JASA */}
         <div className={`pos-catalog-side ${mobileTab === 'cart' ? 'mobile-hidden' : ''}`}>
           
-          {/* BAR AKSI CEPAT: INPUT PART LUAR & ANTREAN MOTOR DITINGGAL */}
+          {/* BAR AKSI CEPAT: INPUT PART LUAR, CATAT PENGELUARAN & ANTREAN MOTOR DITINGGAL */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -1016,27 +1021,51 @@ export const PosView = () => {
             gap: '0.5rem',
             marginBottom: '0.75rem'
           }}>
-            <button
-              type="button"
-              onClick={() => setShowManualModal(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.45rem 0.85rem',
-                background: 'rgba(245, 158, 11, 0.15)',
-                border: '1px solid rgba(245, 158, 11, 0.4)',
-                borderRadius: '8px',
-                color: '#fbbf24',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                cursor: 'pointer',
-              }}
-              title="Input sparepart atau jasa yang dibeli di luar dadakan tanpa stok gudang"
-            >
-              <IoAddCircleOutline size={18} />
-              <span>+ Input Part Luar / Manual</span>
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setShowManualModal(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.85rem',
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  borderRadius: '8px',
+                  color: '#fbbf24',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                }}
+                title="Input sparepart atau jasa yang dibeli di luar dadakan tanpa stok gudang"
+              >
+                <IoAddCircleOutline size={18} />
+                <span>+ Input Part Luar / Manual</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowExpenseModal(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.45rem 0.85rem',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: '8px',
+                  color: '#f87171',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                }}
+                title="Catat pengeluaran operasional (makan minum mekanik, bensin cuci part, sabun, dll)"
+              >
+                <IoWalletOutline size={18} />
+                <span>💸 Catat Pengeluaran</span>
+              </button>
+            </div>
 
             <button
               type="button"
@@ -1572,6 +1601,16 @@ export const PosView = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* MODAL PENCATATAN PENGELUARAN BENGKEL */}
+      {showExpenseModal && (
+        <ExpenseModal
+          onClose={() => setShowExpenseModal(false)}
+          onSuccess={() => {
+            setShowExpenseModal(false);
+          }}
+        />
       )}
     </div>
   );

@@ -35,8 +35,8 @@ module.exports = {
     }
 
     // 3. LOGIKA PENGURANGAN STOK:
-    // HANYA transaksi BUKAN DRAFT (COMPLETED) dan barang fisik (bukan Jasa) yang dipotong stok fisiknya
-    if (trxData.status !== "DRAFT") {
+    // HANYA transaksi BUKAN DRAFT/EXPENSE (COMPLETED) dan barang fisik (bukan Jasa) yang dipotong stok fisiknya
+    if (trxData.status !== "DRAFT" && trxData.status !== "EXPENSE") {
       for (const item of items) {
         // Jika bukan jasa servis dan memiliki product_id
         if (!item.is_service && item.product_id) {

@@ -1,12 +1,22 @@
+const jwt = require("jsonwebtoken");
 const transactionModel = require("../models/transaction");
 const storeSettingsModel = require("../models/storeSettings");
 const wrapper = require("../utils/wrapper");
+
+const JWT_SECRET = process.env.JWT_SECRET || "monescamotor_jwt_super_secret_key_2026";
 
 const generateInvoiceNumber = () => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   return `INV-${dateStr}-${randomSuffix}`;
+};
+
+const generateExpenseNumber = () => {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `EXP-${dateStr}-${randomSuffix}`;
 };
 
 module.exports = {
@@ -263,6 +273,98 @@ module.exports = {
     } catch (error) {
       console.error("Delete draft error:", error);
       return wrapper.response(response, 500, "Gagal menghapus draft", error);
+    }
+  },
+
+  // Catat Pengeluaran Operasional / Belanja Bengkel
+  createExpense: async (request, response) => {
+    try {
+      const {
+        category = "Operasional Bengkel",
+        amount = 0,
+        description = "",
+        payment_method = "CASH",
+        date,
+      } = request.body;
+
+      const numAmount = Number(amount);
+      if (!numAmount || numAmount <= 0) {
+        return wrapper.response(response, 400, "Nominal pengeluaran harus lebih besar dari 0");
+      }
+
+      let cashierName = (request.user && (request.user.name || request.user.username)) || request.body.cashier_name || "Kasir";
+      let cashierId = (request.user && request.user.id) || request.body.cashier_id || null;
+
+      // Cek auth header jika user belum di-parse
+      if (!request.user && request.headers.authorization) {
+        try {
+          let token = request.headers.authorization;
+          if (token.startsWith("Bearer ")) {
+            token = token.slice(7).trim();
+          }
+          const decoded = jwt.verify(token, JWT_SECRET);
+          if (decoded) {
+            cashierId = decoded.id;
+            cashierName = decoded.name || decoded.username;
+          }
+        } catch (_) {}
+      }
+
+      const invoiceNumber = generateExpenseNumber();
+
+      const expensePayload = {
+        invoice_number: invoiceNumber,
+        cashier_id: cashierId,
+        cashier_name: cashierName,
+        customer_name: category.trim() || "Pengeluaran Bengkel",
+        customer_phone: null,
+        vehicle_plate: null,
+        vehicle_model: null,
+        subtotal: numAmount,
+        discount: 0,
+        total_amount: numAmount,
+        payment_method: payment_method || "CASH",
+        cash_given: numAmount,
+        change_due: 0,
+        status: "EXPENSE",
+        notes: description ? description.trim() : null,
+      };
+
+      if (date) {
+        expensePayload.created_at = new Date(date).toISOString();
+      }
+
+      const itemPayload = [
+        {
+          product_id: null,
+          product_name: `[PENGELUARAN] ${category}: ${description || ''}`.trim(),
+          brand_name: null,
+          is_service: true, // Non-stok agar tidak memotong stok fisik gudang
+          cost_price: numAmount,
+          unit_price: numAmount,
+          quantity: 1,
+          subtotal: numAmount,
+        },
+      ];
+
+      const savedExpense = await transactionModel.createTransaction(expensePayload, itemPayload);
+
+      return wrapper.response(response, 201, "Pengeluaran bengkel berhasil dicatat", savedExpense);
+    } catch (error) {
+      console.error("Create expense error:", error);
+      return wrapper.response(response, 500, "Gagal mencatat pengeluaran bengkel", error);
+    }
+  },
+
+  // Hapus Catatan Pengeluaran
+  deleteExpense: async (request, response) => {
+    try {
+      const { id } = request.params;
+      await transactionModel.deleteTransaction(id, false);
+      return wrapper.response(response, 200, "Catatan pengeluaran berhasil dihapus");
+    } catch (error) {
+      console.error("Delete expense error:", error);
+      return wrapper.response(response, 500, "Gagal menghapus catatan pengeluaran", error);
     }
   },
 };
