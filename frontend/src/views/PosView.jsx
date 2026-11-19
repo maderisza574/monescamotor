@@ -68,6 +68,7 @@ export const PosView = () => {
   // Input Item Manual / Part Beli di Luar (Non-Stok)
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualName, setManualName] = useState('');
+  const [manualCostPrice, setManualCostPrice] = useState('');
   const [manualPrice, setManualPrice] = useState('');
   const [manualQty, setManualQty] = useState(1);
   const [manualIsService, setManualIsService] = useState(false);
@@ -350,7 +351,16 @@ export const PosView = () => {
         payment_method: paymentMethod,
         cash_given: totalCashReceived,
         notes: finalNotes,
-        items: cart,
+        items: cart.map((item) => ({
+          product_id: item.product_id || null,
+          product_name: item.product_name,
+          brand_name: item.brand_name || null,
+          is_service: Boolean(item.is_service),
+          cost_price: Number(item.cost_price || 0),
+          unit_price: Number(item.unit_price || 0),
+          quantity: Number(item.quantity || 1),
+          subtotal: Number(item.subtotal || item.unit_price * item.quantity),
+        })),
       };
 
       const res = await api.post('/transactions', payload);
@@ -443,9 +453,19 @@ export const PosView = () => {
     );
   };
 
+  const handleCloseManualModal = () => {
+    setShowManualModal(false);
+    setManualName('');
+    setManualCostPrice('');
+    setManualPrice('');
+    setManualQty(1);
+    setManualIsService(false);
+  };
+
   const handleAddManualItem = (e) => {
     if (e) e.preventDefault();
     const trimmed = manualName.trim();
+    const costPrice = parseRupiahInput(manualCostPrice);
     const price = parseRupiahInput(manualPrice);
     const qty = Number(manualQty) || 1;
 
@@ -463,7 +483,7 @@ export const PosView = () => {
       product_id: null,
       product_name: trimmed,
       brand_name: manualIsService ? 'JASA' : 'BELI LUAR',
-      cost_price: 0,
+      cost_price: costPrice,
       unit_price: price,
       quantity: qty,
       subtotal: price * qty,
@@ -473,11 +493,7 @@ export const PosView = () => {
     };
 
     setCart((prev) => [...prev, newItem]);
-    setManualName('');
-    setManualPrice('');
-    setManualQty(1);
-    setManualIsService(false);
-    setShowManualModal(false);
+    handleCloseManualModal();
   };
 
   const getBrandBadgeClass = (brandName, isService) => {
@@ -620,7 +636,12 @@ export const PosView = () => {
                     {item.product_name}
                   </div>
                   <div className="cart-item-sub">
-                    {formatCurrency(item.unit_price)}
+                    <span>{formatCurrency(item.unit_price)}</span>
+                    {item.is_manual && Number(item.cost_price) > 0 && (
+                      <span style={{ fontSize: '0.7rem', color: '#34d399', marginLeft: '6px', fontWeight: 600 }}>
+                        (Laba: +{formatCurrency((item.unit_price - item.cost_price) * item.quantity)})
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1346,128 +1367,284 @@ export const PosView = () => {
       )}
 
       {/* MODAL INPUT PART LUAR / MANUAL */}
-      {showManualModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '420px', padding: '1.25rem' }}>
-            <div className="modal-header" style={{ marginBottom: '0.85rem' }}>
-              <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#fbbf24' }}>
-                <IoAddCircleOutline color="#fbbf24" size={20} /> Input Part Luar / Manual
-              </h3>
-              <button className="modal-close-btn" onClick={() => setShowManualModal(false)}>
-                <IoCloseCircleOutline size={22} />
-              </button>
-            </div>
+      {showManualModal && (() => {
+        const currentCost = parseRupiahInput(manualCostPrice);
+        const currentSell = parseRupiahInput(manualPrice);
+        const currentQty = Math.max(1, parseInt(manualQty, 10) || 1);
+        const calculatedOmzet = currentSell * currentQty;
+        const calculatedTotalCost = currentCost * currentQty;
+        const calculatedProfit = calculatedOmzet - calculatedTotalCost;
+        const profitMarginPercent = calculatedOmzet > 0 ? Math.round((calculatedProfit / calculatedOmzet) * 100) : 0;
 
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: '1.4' }}>
-              Untuk barang yang dibeli mendadak di luar toko atau jasa non-katalog tanpa perlu stok gudang.
-            </p>
+        return (
+          <div className="modal-overlay">
+            <div className="modal-content" style={{ maxWidth: '460px', padding: '1.25rem' }}>
+              <div className="modal-header" style={{ marginBottom: '0.85rem' }}>
+                <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#fbbf24' }}>
+                  <IoAddCircleOutline color="#fbbf24" size={20} /> Input Part Luar / Manual
+                </h3>
+                <button className="modal-close-btn" onClick={handleCloseManualModal} type="button">
+                  <IoCloseCircleOutline size={22} />
+                </button>
+              </div>
 
-            <form onSubmit={handleAddManualItem}>
-              <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                <label className="form-label">Tipe Item</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => setManualIsService(false)}
-                    style={{
-                      padding: '0.45rem',
-                      borderRadius: '6px',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      background: !manualIsService ? 'rgba(245, 158, 11, 0.2)' : 'var(--bg-input)',
-                      border: `1px solid ${!manualIsService ? '#f59e0b' : 'var(--border-color)'}`,
-                      color: !manualIsService ? '#fbbf24' : 'var(--text-muted)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    📦 Sparepart Luar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setManualIsService(true)}
-                    style={{
-                      padding: '0.45rem',
-                      borderRadius: '6px',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      background: manualIsService ? 'rgba(168, 85, 247, 0.2)' : 'var(--bg-input)',
-                      border: `1px solid ${manualIsService ? '#a855f7' : 'var(--border-color)'}`,
-                      color: manualIsService ? '#c084fc' : 'var(--text-muted)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔧 Jasa / Ongkos
-                  </button>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem', lineHeight: '1.4' }}>
+                Untuk barang yang dibeli mendadak di luar toko atau jasa non-katalog tanpa perlu stok gudang.
+              </p>
+
+              <form onSubmit={handleAddManualItem}>
+                <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                  <label className="form-label">Tipe Item</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setManualIsService(false)}
+                      style={{
+                        padding: '0.45rem',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        background: !manualIsService ? 'rgba(245, 158, 11, 0.2)' : 'var(--bg-input)',
+                        border: `1px solid ${!manualIsService ? '#f59e0b' : 'var(--border-color)'}`,
+                        color: !manualIsService ? '#fbbf24' : 'var(--text-muted)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      📦 Sparepart Luar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualIsService(true)}
+                      style={{
+                        padding: '0.45rem',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        background: manualIsService ? 'rgba(168, 85, 247, 0.2)' : 'var(--bg-input)',
+                        border: `1px solid ${manualIsService ? '#a855f7' : 'var(--border-color)'}`,
+                        color: manualIsService ? '#c084fc' : 'var(--text-muted)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🔧 Jasa / Ongkos
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                <label className="form-label">Nama Barang / Jasa <span style={{ color: '#ef4444' }}>*</span></label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder={manualIsService ? "contoh: Jasa Bubut Tromol / Pasang Luar" : "contoh: Kampas Rem Beli Toko Sebelah"}
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
+                <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                  <label className="form-label">Nama Barang / Jasa <span style={{ color: '#ef4444' }}>*</span></label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder={manualIsService ? "contoh: Jasa Bubut Tromol / Pasang Luar" : "contoh: Kampas Rem Beli Toko Sebelah"}
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.65rem', marginBottom: '1.15rem' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Harga Jual (Rp) <span style={{ color: '#ef4444' }}>*</span></label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="form-input"
-                      style={{ paddingLeft: '28px', fontFamily: 'var(--font-mono)' }}
-                      placeholder="0"
-                      value={manualPrice ? formatRupiahInput(manualPrice) : ''}
-                      onChange={(e) => setManualPrice(parseRupiahInput(e.target.value))}
-                      required
-                    />
-                    <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700, pointerEvents: 'none' }}>
-                      Rp
+                {/* DUA KOLOM: HARGA MODAL & HARGA JUAL */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: '0.75rem' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Harga Modal (Rp)</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="form-input"
+                        style={{ paddingLeft: '28px', fontFamily: 'var(--font-mono)' }}
+                        placeholder="0"
+                        value={manualCostPrice ? formatRupiahInput(manualCostPrice) : ''}
+                        onChange={(e) => setManualCostPrice(parseRupiahInput(e.target.value))}
+                      />
+                      <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 700, pointerEvents: 'none' }}>
+                        Rp
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px', display: 'block' }}>
+                      Modal beli di luar
+                    </span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Harga Jual (Rp) <span style={{ color: '#ef4444' }}>*</span></span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="form-input"
+                        style={{ paddingLeft: '28px', fontFamily: 'var(--font-mono)' }}
+                        placeholder="0"
+                        value={manualPrice ? formatRupiahInput(manualPrice) : ''}
+                        onChange={(e) => setManualPrice(parseRupiahInput(e.target.value))}
+                        required
+                      />
+                      <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700, pointerEvents: 'none' }}>
+                        Rp
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: '#38bdf8', marginTop: '2px', display: 'block' }}>
+                      Tercetak di nota
                     </span>
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: 0 }}>
+                {/* JUMLAH QTY */}
+                <div className="form-group" style={{ marginBottom: '0.85rem' }}>
                   <label className="form-label">Jumlah (Qty)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="form-input"
-                    value={manualQty}
-                    onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value) || 1))}
-                    required
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setManualQty(Math.max(1, (parseInt(manualQty) || 1) - 1))}
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '6px',
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '1.1rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                      }}
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-input"
+                      style={{ width: '80px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+                      value={manualQty}
+                      onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value) || 1))}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setManualQty((parseInt(manualQty) || 1) + 1)}
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '6px',
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '1.1rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                      }}
+                    >
+                      +
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: '4px' }}>
+                      {manualIsService ? 'kali pengerjaan' : 'pcs / unit'}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '0.65rem' }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowManualModal(false)}
-                  style={{ padding: '0.65rem' }}
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  style={{ padding: '0.65rem', background: '#f59e0b', color: '#000', fontWeight: 800 }}
-                >
-                  + Masukkan Faktur
-                </button>
-              </div>
-            </form>
+                {/* REKAPAN OTOMATIS OMZET & KEUNTUNGAN */}
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.75)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 0.85rem',
+                  marginBottom: '1rem',
+                }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>📊 Rekap Omzet & Estimasi Keuntungan</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.45rem 0.6rem', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Omzet Penjualan (Nota)</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#38bdf8', fontFamily: 'var(--font-mono)' }}>
+                        {formatCurrency(calculatedOmzet)}
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.45rem 0.6rem', borderRadius: '6px' }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Total Modal Beli</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                        {formatCurrency(calculatedTotalCost)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    background: calculatedProfit >= 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    border: `1px solid ${calculatedProfit >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                    borderRadius: '6px',
+                    padding: '0.5rem 0.65rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: calculatedProfit >= 0 ? '#34d399' : '#f87171' }}>
+                        Keuntungan Bersih:
+                      </div>
+                      <div style={{ fontSize: '0.66rem', color: 'var(--text-dim)' }}>
+                        {manualIsService ? 'Masuk ke Omzet Laba Jasa' : 'Masuk ke Omzet Laba Sparepart'}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 800, color: calculatedProfit >= 0 ? '#34d399' : '#f87171', fontFamily: 'var(--font-mono)' }}>
+                        {calculatedProfit >= 0 ? `+ ${formatCurrency(calculatedProfit)}` : formatCurrency(calculatedProfit)}
+                      </div>
+                      {calculatedOmzet > 0 && (
+                        <div style={{ fontSize: '0.68rem', color: calculatedProfit >= 0 ? '#6ee7b7' : '#fca5a5' }}>
+                          Margin: {profitMarginPercent}%
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {currentCost > 0 && currentSell > 0 && currentSell < currentCost && (
+                    <div style={{ marginTop: '0.45rem', fontSize: '0.72rem', color: '#f87171', fontWeight: 600 }}>
+                      ⚠️ Harga jual lebih kecil dari modal (rugi {formatCurrency(currentCost - currentSell)} / unit).
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.68rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span>🔒</span>
+                    <span>Pada nota cetak, <strong>hanya Harga Jual ({formatCurrency(currentSell)}) yang tampil</strong> ke pelanggan. Modal & keuntungan otomatis masuk ke omzet bengkel.</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '0.65rem' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleCloseManualModal}
+                    style={{ padding: '0.65rem' }}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    style={{ padding: '0.65rem', background: '#f59e0b', color: '#000', fontWeight: 800 }}
+                  >
+                    + Masukkan Faktur
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL ANTREAN MOTOR DITINGGAL (DRAFT SERVIS) */}
       {showDraftsModal && (
